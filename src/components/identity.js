@@ -1,81 +1,40 @@
 /**
- * Cross-site identity sync.
+ * Cross-site account persistence.
  *
- * localStorage is scoped per-origin, so a username saved via lgStore() while
- * running on site A is invisible when the same bookmarklet runs on site B.
- * To get "log in once per bookmarklet install, works on every site" without
- * an actual login step, we mirror the username into a hidden iframe pointed
- * at one fixed origin (Supabase Storage, same place bundle.js is hosted) and
- * talk to it with postMessage. That iframe's localStorage is the same no
- * matter which site embedded it, so it acts as the single source of truth.
+ * localStorage is scoped per-origin (and can be blocked outright on pages
+ * that render inside a sandboxed iframe lacking 'allow-same-origin' -- no
+ * script, ours or the page's own, can read/write storage there at all). So
+ * instead of relying on browser storage to carry the identity between
+ * sites, the username is embedded directly in the bookmarklet's own
+ * javascript: URL, which the browser stores in the bookmarks bar itself --
+ * completely independent of any page's storage or sandboxing.
  *
- * If the iframe never responds (blocked by a page's CSP, offline, etc.) we
- * silently fall back to the existing per-site identity -- the feature
- * degrades gracefully instead of breaking the chat.
+ * captureBootstrapUsername() must be called synchronously at bundle
+ * startup (document.currentScript is only valid during the initial
+ * synchronous script execution).
  */
-const IDENTITY_URL = "https://mtusdkooiuoocyffsznx.supabase.co/storage/v1/object/public/bookmarklet/identity.html";
-const HANDSHAKE_TIMEOUT_MS = 2500;
+const BUNDLE_URL = "https://mtusdkooiuoocyffsznx.supabase.co/storage/v1/object/public/bookmarklet/bundle.js";
 
-let framePromise = null;
+let embeddedUsername = null;
 
-function getFrame() {
-  if (framePromise) return framePromise;
-  framePromise = new Promise((resolve) => {
-    try {
-      const iframe = document.createElement("iframe");
-      iframe.style.display = "none";
-      // Explicit sandbox tokens: when this code itself runs inside an
-      // already-sandboxed ancestor (e.g. Cielo's own proxy viewport, see
-      // browser.js), any child iframe created WITHOUT its own sandbox
-      // attribute is forced to zero permissions by the browser -- it does
-      // NOT inherit the ancestor's tokens. Declaring them here explicitly
-      // is required for the identity broker to be allowed to run at all.
-      iframe.setAttribute("sandbox", "allow-scripts allow-same-origin");
-      iframe.src = IDENTITY_URL;
-      iframe.addEventListener("load", () => resolve(iframe));
-      iframe.addEventListener("error", () => resolve(null));
-      document.body.appendChild(iframe);
-      setTimeout(() => resolve(iframe), HANDSHAKE_TIMEOUT_MS);
-    } catch (e) {
-      resolve(null);
+export function captureBootstrapUsername() {
+  try {
+    const src = document.currentScript && document.currentScript.src;
+    if (src) {
+      const u = new URL(src).searchParams.get("u");
+      if (u) embeddedUsername = u;
     }
-  });
-  return framePromise;
+  } catch (e) {}
+  return embeddedUsername;
 }
 
-function call(type, payload) {
-  return new Promise((resolve) => {
-    getFrame().then((iframe) => {
-      if (!iframe || !iframe.contentWindow) return resolve(null);
-      const reqId = Math.random().toString(36).slice(2);
-      let done = false;
-      const onMessage = (e) => {
-        const msg = e.data;
-        if (!msg || msg.reqId !== reqId) return;
-        if (done) return;
-        done = true;
-        window.removeEventListener("message", onMessage);
-        resolve(msg);
-      };
-      window.addEventListener("message", onMessage);
-      iframe.contentWindow.postMessage({ type, reqId, ...payload }, "*");
-      setTimeout(() => {
-        if (done) return;
-        done = true;
-        window.removeEventListener("message", onMessage);
-        resolve(null);
-      }, HANDSHAKE_TIMEOUT_MS);
-    });
-  });
+/** The username embedded in the bookmarklet link that loaded this bundle, if any. */
+export function getEmbeddedUsername() {
+  return embeddedUsername;
 }
 
-/** Resolves to the shared username, or null if the broker is unreachable. */
-export function getSharedUsername() {
-  return call("lg-id-get", {}).then((res) => (res ? res.username : null));
-}
-
-/** Fire-and-forget: mirror a username into the shared broker. */
-export function setSharedUsername(username) {
-  if (!username) return Promise.resolve();
-  return call("lg-id-set", { username }).then(() => {});
+/** Builds the javascript: bookmarklet URL for a given username, embedding it. */
+export function buildPersonalBookmarklet(username) {
+  const loaderSrc = `void function(){var d=document,s=d.createElement("script");s.src=${JSON.stringify(BUNDLE_URL)}+"?v="+Date.now()+"&u="+encodeURIComponent(${JSON.stringify(username)});d.head.appendChild(s);}();`;
+  return "javascript:" + encodeURIComponent(loaderSrc);
 }

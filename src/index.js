@@ -1,4 +1,12 @@
 import './styles.css';
+import { captureBootstrapUsername } from './components/identity.js';
+
+// Must run synchronously at the top of the bundle -- document.currentScript
+// is only valid during the initial synchronous script execution, so this
+// can't be deferred into buildChat() which runs later, after the user opens
+// the chat panel.
+captureBootstrapUsername();
+
 import { buildDock } from './components/dock.js';
 import { buildCapture } from './components/capture.js';
 import { buildAudio } from './components/audio.js';

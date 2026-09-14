@@ -27,8 +27,6 @@ if (!fs.existsSync(bundlePath)) {
   process.exit(1);
 }
 
-const identityPath = path.resolve(__dirname, 'identity.html');
-
 async function upload(filePath, objectPath, contentType) {
   const body = fs.readFileSync(filePath);
   const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${BUCKET}/${objectPath}`, {
@@ -53,10 +51,4 @@ async function upload(filePath, objectPath, contentType) {
 
 (async () => {
   await upload(bundlePath, OBJECT_PATH, 'application/javascript');
-  if (fs.existsSync(identityPath)) {
-    // identity.html is the cross-site identity broker iframe -- it rarely
-    // changes, but redeploy it alongside the bundle so it never drifts out
-    // of sync with what chat.js expects on the wire.
-    await upload(identityPath, 'identity.html', 'text/html');
-  }
 })();

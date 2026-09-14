@@ -1,7 +1,7 @@
 import { createPanel } from './panel.js';
 import { ICONS } from './icons.js';
 import { lgStore } from './storage.js';
-import { getSharedUsername, setSharedUsername } from './identity.js';
+import { getEmbeddedUsername, buildPersonalBookmarklet } from './identity.js';
 
 const DEFAULT_SUPABASE_URL = "https://mtusdkooiuoocyffsznx.supabase.co";
 const DEFAULT_SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10dXNka29vaXVvb2N5ZmZzem54Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg2MzU4NDEsImV4cCI6MjA5NDIxMTg0MX0.b9zhiqVqykppmthj36LgMr_tbitnht3YkRyT69gkS9E";
@@ -25,41 +25,18 @@ export function buildChat(root, vw, vh, onRemove) {
   // Supabase project is fixed for this HUD — not user-configurable.
   const supabaseUrl = DEFAULT_SUPABASE_URL;
   const supabaseKey = DEFAULT_SUPABASE_KEY;
-  // ONE account per bookmarklet install: mint a random anonymous identity the
-  // first time the bookmarklet runs, then persist it and reuse it on every
-  // later open — so closing & reopening Cielo never changes your account.
-  let myUsername = lgStore("_lg_hud_username");
+  // ONE account per bookmarklet install, working on every site: if this
+  // bundle was loaded from a personal bookmarklet link (one generated via
+  // the "Save this account" button below), the username is embedded right
+  // in that link's URL -- no storage of any kind involved, so it survives
+  // even pages that sandbox out localStorage entirely. Otherwise fall back
+  // to the plain per-site identity (and offer to upgrade it below).
+  let myUsername = getEmbeddedUsername() || lgStore("_lg_hud_username");
   if (!myUsername) {
     myUsername = "User_" + Math.floor(1000 + Math.random() * 9000);
-    lgStore("_lg_hud_username", myUsername);
   }
-
-  // Reconcile with the cross-site identity broker so the SAME account is used
-  // no matter which website the bookmarklet is opened on, without ever
-  // showing a login screen. Runs after the panel is built (see below) since
-  // it needs myNameEl/myAvatarEl to exist if it has to relabel the UI.
-  function syncSharedIdentity() {
-    getSharedUsername().then((shared) => {
-      if (shared && shared !== myUsername) {
-        // Another site already established a shared identity -- adopt it here.
-        const oldUsername = myUsername;
-        myUsername = shared;
-        lgStore("_lg_hud_username", myUsername);
-        if (typeof myNameEl !== "undefined" && myNameEl) {
-          myNameEl.textContent = myUsername;
-          myAvatarEl.textContent = myUsername.charAt(0).toUpperCase();
-          myAvatarEl.style.background = stringToColor(myUsername);
-        }
-        migrateUsername(oldUsername, myUsername).then(() => {
-          registerUser();
-          fetchMessages();
-        });
-      } else if (!shared) {
-        // First time the broker has been reached from any site -- seed it.
-        setSharedUsername(myUsername);
-      }
-    });
-  }
+  lgStore("_lg_hud_username", myUsername);
+  const hasPermanentAccount = !!getEmbeddedUsername();
 
   let activeTarget = { type: "channel", id: "general", name: "general" };
   let liveMessages = [];
@@ -160,6 +137,17 @@ export function buildChat(root, vw, vh, onRemove) {
               <button class="lg-chat-settings-save" data-btn="save-settings">Save &amp; Sync</button>
               <button class="lg-chat-settings-close" data-btn="close-settings">Close</button>
             </div>
+            <div class="lg-chat-settings-permalink" style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.08);">
+              <div style="font-size:12px;color:${hasPermanentAccount ? '#8bffb0' : '#ffd58a'};">
+                ${hasPermanentAccount
+                  ? `✓ This bookmarklet is saved to your account — it stays <strong>${escapeHtml(myUsername)}</strong> on every site.`
+                  : `This site's copy of Cielo isn't saved — reopening on a different site currently starts a new local identity.`}
+              </div>
+              <div style="display:flex;gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap;">
+                <a class="lg-chat-settings-save" data-permalink-link href="#" style="text-decoration:none;display:inline-block;">⬇ ${hasPermanentAccount ? 'Update bookmarklet' : 'Drag to bookmarks bar'}</a>
+                <span style="font-size:11px;color:#94a3b8;">Drag this to your bookmarks bar once (replacing your old one if renaming) — it keeps the username above on every site, forever, no login needed.</span>
+              </div>
+            </div>
           </div>
 
           <!-- Messages Stream -->
@@ -214,6 +202,12 @@ export function buildChat(root, vw, vh, onRemove) {
   const closeSettingsBtn = p.querySelector("[data-btn='close-settings']");
   const myNameEl = p.querySelector("[data-my-name]");
   const myAvatarEl = p.querySelector("[data-my-avatar]");
+  const permalinkEl = p.querySelector("[data-permalink-link]");
+
+  function refreshPermalink() {
+    if (permalinkEl) permalinkEl.href = buildPersonalBookmarklet(myUsername);
+  }
+  refreshPermalink();
 
   // VC handles
   const toggleVcBtn = p.querySelector("[data-btn='toggle-vc']");
@@ -799,11 +793,11 @@ export function buildChat(root, vw, vh, onRemove) {
       saveSettingsBtn.disabled = true;
       saveSettingsBtn.textContent = "Syncing…";
       await migrateUsername(oldUsername, newUsername);
-      setSharedUsername(newUsername);
       saveSettingsBtn.disabled = false;
       saveSettingsBtn.textContent = "Save & Sync";
     }
 
+    refreshPermalink();
     registerUser();
     fetchMessages();
   });
@@ -811,7 +805,6 @@ export function buildChat(root, vw, vh, onRemove) {
   // Start registration and fast 1.5s live polling
   registerUser();
   fetchMessages();
-  syncSharedIdentity();
 
   const pollInterval = setInterval(() => {
     if (document.body.contains(p)) {
