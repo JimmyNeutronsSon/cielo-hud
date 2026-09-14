@@ -24,6 +24,13 @@ function getFrame() {
     try {
       const iframe = document.createElement("iframe");
       iframe.style.display = "none";
+      // Explicit sandbox tokens: when this code itself runs inside an
+      // already-sandboxed ancestor (e.g. Cielo's own proxy viewport, see
+      // browser.js), any child iframe created WITHOUT its own sandbox
+      // attribute is forced to zero permissions by the browser -- it does
+      // NOT inherit the ancestor's tokens. Declaring them here explicitly
+      // is required for the identity broker to be allowed to run at all.
+      iframe.setAttribute("sandbox", "allow-scripts allow-same-origin");
       iframe.src = IDENTITY_URL;
       iframe.addEventListener("load", () => resolve(iframe));
       iframe.addEventListener("error", () => resolve(null));
