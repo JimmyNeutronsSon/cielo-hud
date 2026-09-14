@@ -1,6 +1,7 @@
 import { createPanel } from './panel.js';
 import { ICONS } from './icons.js';
 import { lgStore } from './storage.js';
+import { getSharedUsername, setSharedUsername } from './identity.js';
 
 const DEFAULT_SUPABASE_URL = "https://mtusdkooiuoocyffsznx.supabase.co";
 const DEFAULT_SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10dXNka29vaXVvb2N5ZmZzem54Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg2MzU4NDEsImV4cCI6MjA5NDIxMTg0MX0.b9zhiqVqykppmthj36LgMr_tbitnht3YkRyT69gkS9E";
@@ -24,11 +25,44 @@ export function buildChat(root, vw, vh, onRemove) {
   // Supabase project is fixed for this HUD — not user-configurable.
   const supabaseUrl = DEFAULT_SUPABASE_URL;
   const supabaseKey = DEFAULT_SUPABASE_KEY;
-  let myUsername = lgStore("_lg_hud_username") || ("User_" + Math.floor(1000 + Math.random() * 9000));
+  // ONE account per bookmarklet install: mint a random anonymous identity the
+  // first time the bookmarklet runs, then persist it and reuse it on every
+  // later open — so closing & reopening Cielo never changes your account.
+  let myUsername = lgStore("_lg_hud_username");
+  if (!myUsername) {
+    myUsername = "User_" + Math.floor(1000 + Math.random() * 9000);
+    lgStore("_lg_hud_username", myUsername);
+  }
+
+  // Reconcile with the cross-site identity broker so the SAME account is used
+  // no matter which website the bookmarklet is opened on, without ever
+  // showing a login screen. Runs after the panel is built (see below) since
+  // it needs myNameEl/myAvatarEl to exist if it has to relabel the UI.
+  function syncSharedIdentity() {
+    getSharedUsername().then((shared) => {
+      if (shared && shared !== myUsername) {
+        // Another site already established a shared identity -- adopt it here.
+        const oldUsername = myUsername;
+        myUsername = shared;
+        lgStore("_lg_hud_username", myUsername);
+        if (typeof myNameEl !== "undefined" && myNameEl) {
+          myNameEl.textContent = myUsername;
+          myAvatarEl.textContent = myUsername.charAt(0).toUpperCase();
+          myAvatarEl.style.background = stringToColor(myUsername);
+        }
+        migrateUsername(oldUsername, myUsername).then(() => {
+          registerUser();
+          fetchMessages();
+        });
+      } else if (!shared) {
+        // First time the broker has been reached from any site -- seed it.
+        setSharedUsername(myUsername);
+      }
+    });
+  }
 
   let activeTarget = { type: "channel", id: "general", name: "general" };
   let liveMessages = [];
-  let onlineUsers = [];
   let pendingImage = null;
 
   // Voice Chat State
@@ -50,7 +84,7 @@ export function buildChat(root, vw, vh, onRemove) {
     title: "Cielo Live Chat & Voice",
     body: `
       <div class="lg-chat-container">
-        <!-- Left Sidebar: Channels, Voice, DMs -->
+        <!-- Left Sidebar: Channels, Voice -->
         <div class="lg-chat-sidebar">
           <div class="lg-chat-sidebar-section">
             <div class="lg-chat-section-header">TEXT CHANNELS</div>
@@ -66,15 +100,6 @@ export function buildChat(root, vw, vh, onRemove) {
               <span class="lg-vc-badge" data-vc-badge>Join</span>
             </button>
             <div class="lg-vc-members" data-vc-members style="display:none;"></div>
-          </div>
-
-          <!-- DMs Section -->
-          <div class="lg-chat-sidebar-section" style="flex:1.2;">
-            <div class="lg-chat-section-header" style="display:flex;justify-content:space-between;align-items:center;">
-              <span>DIRECT MESSAGES</span>
-              <button class="lg-chat-add-btn" data-btn="add-dm" title="DM a user">+</button>
-            </div>
-            <div class="lg-chat-dms-list" data-dms-list></div>
           </div>
 
           <!-- User Bar -->
@@ -130,7 +155,7 @@ export function buildChat(root, vw, vh, onRemove) {
                 <input type="text" data-cfg-username value="${escapeHtml(myUsername)}" placeholder="e.g. Alex" />
               </label>
             </div>
-            <div style="font-size:11px;color:#94a3b8;margin-top:6px;">Renaming migrates all of your previous messages and DMs to the new name.</div>
+            <div style="font-size:11px;color:#94a3b8;margin-top:6px;">Renaming migrates all of your previous messages to the new name.</div>
             <div style="display:flex;gap:8px;margin-top:10px;justify-content:flex-end;">
               <button class="lg-chat-settings-save" data-btn="save-settings">Save &amp; Sync</button>
               <button class="lg-chat-settings-close" data-btn="close-settings">Close</button>
@@ -170,7 +195,6 @@ export function buildChat(root, vw, vh, onRemove) {
 
   // Element handles
   const channelsList = p.querySelector("[data-channels-list]");
-  const dmsList = p.querySelector("[data-dms-list]");
   const stream = p.querySelector("[data-chat-stream]");
   const input = p.querySelector("[data-chat-input]");
   const fileInput = p.querySelector("[data-file-input]");
@@ -183,7 +207,6 @@ export function buildChat(root, vw, vh, onRemove) {
   const headerIcon = p.querySelector("[data-header-icon]");
   const headerTitle = p.querySelector("[data-header-title]");
   const refreshBtn = p.querySelector("[data-btn='refresh-msgs']");
-  const addDmBtn = p.querySelector("[data-btn='add-dm']");
   const settingsBtn = p.querySelector("[data-btn='open-settings']");
   const settingsDrawer = p.querySelector("[data-settings-drawer]");
   const cfgUsername = p.querySelector("[data-cfg-username]");
@@ -258,13 +281,9 @@ export function buildChat(root, vw, vh, onRemove) {
     `;
   }
 
-  function getPairKey(userA, userB) {
-    return [userA.trim(), userB.trim()].sort().join('|');
-  }
-
   // When someone renames themselves, re-point their entire history (channel
-  // messages + DM threads + presence row) at the new username so nothing they
-  // said before the rename becomes orphaned or unattributed.
+  // messages + presence row) at the new username so nothing they said before
+  // the rename becomes orphaned or unattributed.
   async function migrateUsername(oldName, newName) {
     if (!oldName || !newName || oldName === newName) return;
     const base = supabaseUrl.replace(/\/+$/, '');
@@ -291,37 +310,7 @@ export function buildChat(root, vw, vh, onRemove) {
         }
       }
 
-      // 2. DM threads involving the old name (participant list lives in the
-      // pair_key, and each message also carries from/to).
-      const dmsRes = await fetch(`${base}/rest/v1/chat_dms?limit=1000`, { headers });
-      if (dmsRes.ok) {
-        const dmRows = await dmsRes.json();
-        if (Array.isArray(dmRows)) {
-          for (const row of dmRows) {
-            if (!row.pair_key || !Array.isArray(row.messages)) continue;
-            const participants = row.pair_key.split('|');
-            if (!participants.includes(oldName)) continue;
-
-            const updatedMessages = row.messages.map(m => ({
-              ...m,
-              from: m.from === oldName ? newName : m.from,
-              to: m.to === oldName ? newName : m.to
-            }));
-            const newPairKey = getPairKey(
-              participants[0] === oldName ? newName : participants[0],
-              participants[1] === oldName ? newName : participants[1]
-            );
-
-            await fetch(`${base}/rest/v1/chat_dms?pair_key=eq.${encodeURIComponent(row.pair_key)}`, {
-              method: "PATCH",
-              headers: { ...headers, "Prefer": "return=minimal" },
-              body: JSON.stringify({ pair_key: newPairKey, messages: updatedMessages })
-            });
-          }
-        }
-      }
-
-      // 3. Drop the old presence row (registerUser() will insert the new one).
+      // 2. Drop the old presence row (registerUser() will insert the new one).
       await fetch(`${base}/rest/v1/chat_users?username=eq.${encodeURIComponent(oldName)}`, {
         method: "DELETE",
         headers
@@ -354,28 +343,6 @@ export function buildChat(root, vw, vh, onRemove) {
     } catch (e) {}
   }
 
-  async function fetchUsers() {
-    if (!supabaseUrl || !supabaseKey) return;
-    try {
-      const res = await fetch(`${supabaseUrl.replace(/\/+$/, '')}/rest/v1/chat_users?order=username.asc&limit=30`, {
-        headers: {
-          "apikey": supabaseKey,
-          "Authorization": `Bearer ${supabaseKey}`
-        }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data)) {
-          onlineUsers = data.map(u => ({
-            name: u.username,
-            status: u.data && u.data.status ? u.data.status : "online"
-          })).filter(u => u.name && u.name !== myUsername);
-          renderSidebar();
-        }
-      }
-    } catch (e) {}
-  }
-
   function renderSidebar() {
     // Channels
     channelsList.innerHTML = "";
@@ -388,37 +355,13 @@ export function buildChat(root, vw, vh, onRemove) {
       });
       channelsList.appendChild(btn);
     });
-
-    // DMs
-    dmsList.innerHTML = "";
-    const dmList = onlineUsers.length > 0 ? onlineUsers : [
-      { name: "Ihtiram", status: "online" },
-      { name: "michael", status: "online" },
-      { name: "Atharva Joshi", status: "online" },
-      { name: "Cielo AI", status: "bot" }
-    ];
-
-    dmList.forEach(u => {
-      const btn = document.createElement("button");
-      btn.className = `lg-chat-item ${activeTarget.type === 'dm' && activeTarget.id === u.name ? 'active' : ''}`;
-      const color = stringToColor(u.name);
-      btn.innerHTML = `
-        <div class="lg-chat-dm-avatar" style="background:${color}">${u.name.charAt(0).toUpperCase()}</div>
-        <span class="lg-chat-item-name">${escapeHtml(u.name)}</span>
-        <span class="lg-chat-status-dot ${u.status === 'bot' ? 'bot' : 'online'}"></span>
-      `;
-      btn.addEventListener("click", () => {
-        switchTarget("dm", u.name, u.name, "@");
-      });
-      dmsList.appendChild(btn);
-    });
   }
 
-  function switchTarget(type, id, name, icon) {
+  function switchTarget(type, id, name) {
     activeTarget = { type, id, name };
-    headerIcon.textContent = icon || (type === "channel" ? "#" : "@");
+    headerIcon.textContent = "#";
     headerTitle.textContent = name;
-    input.placeholder = `Message ${icon || (type === "channel" ? "#" : "@")}${name}...`;
+    input.placeholder = `Message #${name}...`;
     renderSidebar();
     fetchMessages();
   }
@@ -453,33 +396,6 @@ export function buildChat(root, vw, vh, onRemove) {
             liveMessages = filtered;
             renderMessages();
           }
-        }
-      } else if (activeTarget.type === "dm") {
-        const pairKey = getPairKey(myUsername, activeTarget.id);
-        const endpoint = `${supabaseUrl.replace(/\/+$/, '')}/rest/v1/chat_dms?pair_key=eq.${encodeURIComponent(pairKey)}`;
-        const res = await fetch(endpoint, {
-          headers: {
-            "apikey": supabaseKey,
-            "Authorization": `Bearer ${supabaseKey}`
-          }
-        });
-
-        if (res.ok) {
-          const rows = await res.json();
-          if (Array.isArray(rows) && rows.length > 0 && Array.isArray(rows[0].messages)) {
-            liveMessages = rows[0].messages.map((m, idx) => ({
-              id: "dm_" + idx,
-              author: m.from || "User",
-              text: m.text || "",
-              image: m.image || null,
-              time: m.ts ? new Date(m.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "now",
-              me: m.from === myUsername,
-              reactions: m.reactions || {}
-            }));
-          } else {
-            liveMessages = [];
-          }
-          renderMessages();
         }
       }
     } catch (e) {
@@ -583,22 +499,6 @@ export function buildChat(root, vw, vh, onRemove) {
             });
           }
         }
-      } else if (activeTarget.type === "dm" && typeof msgId === "string" && msgId.startsWith("dm_")) {
-        const idx = parseInt(msgId.slice(3), 10);
-        const pairKey = getPairKey(myUsername, activeTarget.id);
-        const res = await fetch(`${base}/rest/v1/chat_dms?pair_key=eq.${encodeURIComponent(pairKey)}`, { headers });
-        if (res.ok) {
-          const rows = await res.json();
-          if (rows[0] && Array.isArray(rows[0].messages) && rows[0].messages[idx]) {
-            const updatedMessages = rows[0].messages.slice();
-            updatedMessages[idx] = { ...updatedMessages[idx], reactions: msg.reactions };
-            await fetch(`${base}/rest/v1/chat_dms?pair_key=eq.${encodeURIComponent(pairKey)}`, {
-              method: "PATCH",
-              headers: { ...headers, "Prefer": "return=minimal" },
-              body: JSON.stringify({ messages: updatedMessages })
-            });
-          }
-        }
       }
       // Optimistic/bot messages (opt_*, bot_*) have no DB row yet — the local
       // reaction still shows, it just won't survive a poll until they land.
@@ -677,47 +577,6 @@ export function buildChat(root, vw, vh, onRemove) {
           renderMessages();
         }, 600);
       }
-    } else if (activeTarget.type === "dm") {
-      const pairKey = getPairKey(myUsername, activeTarget.id);
-      const newEntry = {
-        to: activeTarget.id,
-        from: myUsername,
-        text: text,
-        image: imageToSend,
-        ts: timestamp,
-        reactions: {}
-      };
-
-      try {
-        const getRes = await fetch(`${supabaseUrl.replace(/\/+$/, '')}/rest/v1/chat_dms?pair_key=eq.${encodeURIComponent(pairKey)}`, {
-          headers: { "apikey": supabaseKey, "Authorization": `Bearer ${supabaseKey}` }
-        });
-        let existingList = [];
-        if (getRes.ok) {
-          const rows = await getRes.json();
-          if (Array.isArray(rows) && rows.length > 0 && Array.isArray(rows[0].messages)) {
-            existingList = rows[0].messages;
-          }
-        }
-        existingList.push(newEntry);
-
-        await fetch(`${supabaseUrl.replace(/\/+$/, '')}/rest/v1/chat_dms`, {
-          method: "POST",
-          headers: {
-            "apikey": supabaseKey,
-            "Authorization": `Bearer ${supabaseKey}`,
-            "Content-Type": "application/json",
-            "Prefer": "resolution=merge-duplicates"
-          },
-          body: JSON.stringify({
-            pair_key: pairKey,
-            messages: existingList
-          })
-        });
-        setTimeout(fetchMessages, 200);
-      } catch (e) {
-        console.error("[Liquid Chat] DM send error:", e);
-      }
     }
   }
 
@@ -727,7 +586,7 @@ export function buildChat(root, vw, vh, onRemove) {
       return "The Liquid Glass Browser runs live Scramjet (Anura) and BlockAway engines to bypass web filters. Open the Browser widget to play!";
     }
     if (l.includes("supa") || l.includes("database") || l.includes("table")) {
-      return `Connected to live Supabase DB (${supabaseUrl}). Messages, images, and DMs are synchronized in real-time!`;
+      return `Connected to live Supabase DB (${supabaseUrl}). Messages and images are synchronized in real-time!`;
     }
     return `Cielo AI: Got your message "${q}". Live cloud rooms & voice chat are ready!`;
   }
@@ -911,14 +770,6 @@ export function buildChat(root, vw, vh, onRemove) {
 
   refreshBtn.addEventListener("click", () => {
     fetchMessages();
-    fetchUsers();
-  });
-
-  addDmBtn.addEventListener("click", () => {
-    const target = prompt("Enter username to direct message (e.g. Ihtiram, michael, Atharva):");
-    if (target && target.trim()) {
-      switchTarget("dm", target.trim(), target.trim(), "@");
-    }
   });
 
   settingsBtn.addEventListener("click", () => {
@@ -948,19 +799,19 @@ export function buildChat(root, vw, vh, onRemove) {
       saveSettingsBtn.disabled = true;
       saveSettingsBtn.textContent = "Syncing…";
       await migrateUsername(oldUsername, newUsername);
+      setSharedUsername(newUsername);
       saveSettingsBtn.disabled = false;
       saveSettingsBtn.textContent = "Save & Sync";
     }
 
     registerUser();
     fetchMessages();
-    fetchUsers();
   });
 
-  // Start registration, user fetching, and fast 1.5s live polling
+  // Start registration and fast 1.5s live polling
   registerUser();
-  fetchUsers();
   fetchMessages();
+  syncSharedIdentity();
 
   const pollInterval = setInterval(() => {
     if (document.body.contains(p)) {

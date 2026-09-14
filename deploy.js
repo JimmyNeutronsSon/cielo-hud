@@ -27,27 +27,36 @@ if (!fs.existsSync(bundlePath)) {
   process.exit(1);
 }
 
-const code = fs.readFileSync(bundlePath);
+const identityPath = path.resolve(__dirname, 'identity.html');
 
-(async () => {
-  const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${BUCKET}/${OBJECT_PATH}`, {
+async function upload(filePath, objectPath, contentType) {
+  const body = fs.readFileSync(filePath);
+  const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${BUCKET}/${objectPath}`, {
     method: 'POST',
     headers: {
       'apikey': serviceKey,
       'Authorization': `Bearer ${serviceKey}`,
-      'Content-Type': 'application/javascript',
+      'Content-Type': contentType,
       'x-upsert': 'true'
     },
-    body: code
+    body
   });
-
   const text = await res.text();
   if (!res.ok) {
-    console.error('ERROR: upload failed', res.status, text);
+    console.error(`ERROR: upload of ${objectPath} failed`, res.status, text);
     process.exit(1);
   }
+  const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${objectPath}`;
+  console.log(`SUCCESS: ${objectPath} deployed to`, publicUrl);
+  console.log('  Size:', (body.length / 1024).toFixed(1), 'KB');
+}
 
-  const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${OBJECT_PATH}`;
-  console.log('SUCCESS: bundle.js deployed to', publicUrl);
-  console.log('  Size:', (code.length / 1024).toFixed(1), 'KB');
+(async () => {
+  await upload(bundlePath, OBJECT_PATH, 'application/javascript');
+  if (fs.existsSync(identityPath)) {
+    // identity.html is the cross-site identity broker iframe -- it rarely
+    // changes, but redeploy it alongside the bundle so it never drifts out
+    // of sync with what chat.js expects on the wire.
+    await upload(identityPath, 'identity.html', 'text/html');
+  }
 })();

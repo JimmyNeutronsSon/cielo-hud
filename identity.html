@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Cielo identity</title></head>
+<body>
+<script>
+// Tiny cross-site identity broker. Hosted at one fixed origin (Supabase
+// Storage) so every bookmarklet instance -- regardless of which website it's
+// running on -- can embed this page in a hidden iframe and read/write the
+// SAME localStorage, giving one persistent account per bookmarklet install
+// across every site instead of one per site.
+//
+// Protocol (window.postMessage, JSON body):
+//   {type:'lg-id-get'}              -> replies {type:'lg-id-value', username} (or null)
+//   {type:'lg-id-set', username}    -> stores it, replies {type:'lg-id-ack'}
+// The username is a non-secret display name, so replies are sent with
+// targetOrigin '*'.
+var KEY = '_lg_hud_username';
+
+window.addEventListener('message', function (e) {
+  var msg = e.data;
+  if (!msg || typeof msg !== 'object') return;
+  if (msg.type === 'lg-id-get') {
+    var v = null;
+    try { v = localStorage.getItem(KEY); } catch (err) {}
+    e.source.postMessage({ type: 'lg-id-value', username: v, reqId: msg.reqId }, '*');
+  } else if (msg.type === 'lg-id-set' && msg.username) {
+    try { localStorage.setItem(KEY, msg.username); } catch (err) {}
+    e.source.postMessage({ type: 'lg-id-ack', reqId: msg.reqId }, '*');
+  }
+});
+</script>
+</body>
+</html>
