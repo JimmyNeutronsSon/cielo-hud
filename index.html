@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <title>Liquid Glass HUD — Bookmarklet</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Jim+Nightshade&family=Sour+Gummy:ital,wght@0,100..900;1,100..900&display=swap"
+    rel="stylesheet">
+  <style>
+    :root {
+      --page-bg-1: #070b14;
+      --page-bg-2: #0d1526;
+      --ink: #e9f1ff;
+      --ink-dim: #7f8fae;
+      --accent: #5ee7ff;
+      --accent2: #8b7cf6;
+      --mono: ui-monospace, "SF Mono", Consolas, "Roboto Mono", monospace;
+      --sans: 'Sour Gummy', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      --font-heading: 'Sour Gummy', 'Jim Nightshade', cursive, var(--sans);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      min-height: 100vh;
+      background:
+        radial-gradient(1200px 700px at 15% -10%, rgba(94, 231, 255, .10), transparent 60%),
+        radial-gradient(1000px 600px at 100% 10%, rgba(139, 124, 246, .12), transparent 55%),
+        linear-gradient(180deg, var(--page-bg-1), var(--page-bg-2));
+      color: var(--ink);
+      font-family: var(--sans);
+      padding: 64px 24px 120px;
+    }
+
+    .wrap {
+      max-width: 760px;
+      margin: 0 auto;
+    }
+
+    .eyebrow {
+      font-family: var(--mono);
+      font-size: 12.5px;
+      letter-spacing: .02em;
+      color: var(--accent);
+      margin: 0 0 14px;
+    }
+
+    h1 {
+      font-family: var(--font-heading);
+      font-size: clamp(42px, 6vw, 68px);
+      line-height: 1.15;
+      margin: 0 0 18px;
+      font-weight: 400;
+      letter-spacing: 0.02em;
+      text-shadow: 0 0 15px rgba(94, 231, 255, 0.3);
+    }
+
+    h1 span {
+      color: var(--ink-dim);
+    }
+
+    p.lede {
+      font-size: 17px;
+      line-height: 1.6;
+      color: #c3cee6;
+      max-width: 56ch;
+      margin: 0 0 36px;
+    }
+
+    .install-row {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      flex-wrap: wrap;
+      padding: 22px;
+      border-radius: 16px;
+      border: 1px solid rgba(148, 197, 255, .18);
+      background: rgba(255, 255, 255, .02);
+      margin-bottom: 14px;
+    }
+
+    a.bookmarklet-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      padding: 12px 20px;
+      border-radius: 11px;
+      background: linear-gradient(135deg, rgba(94, 231, 255, .18), rgba(139, 124, 246, .18));
+      border: 1px solid rgba(148, 197, 255, .4);
+      color: var(--ink);
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 14.5px;
+      cursor: grab;
+      box-shadow: 0 0 0 rgba(94, 231, 255, 0);
+      transition: box-shadow .2s ease, transform .2s ease;
+    }
+
+    a.bookmarklet-btn:hover {
+      box-shadow: 0 0 24px rgba(94, 231, 255, .25);
+      transform: translateY(-1px);
+    }
+
+    .install-hint {
+      font-size: 13.5px;
+      color: var(--ink-dim);
+      line-height: 1.55;
+    }
+
+    .install-hint b {
+      color: #c3cee6;
+      font-weight: 600;
+    }
+
+    button.preview-btn {
+      font-family: var(--sans);
+      padding: 12px 18px;
+      border-radius: 11px;
+      border: 1px solid rgba(255, 255, 255, .14);
+      background: rgba(255, 255, 255, .04);
+      color: var(--ink);
+      font-size: 14.5px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    button.preview-btn:hover {
+      background: rgba(255, 255, 255, .08);
+    }
+
+    .steps {
+      font-family: var(--mono);
+      font-size: 12.5px;
+      color: var(--ink-dim);
+      line-height: 2;
+      margin-top: 28px;
+      padding-top: 24px;
+      border-top: 1px solid rgba(255, 255, 255, .08);
+    }
+
+    .steps b {
+      color: var(--ink);
+    }
+
+    code {
+      background: rgba(255, 255, 255, .06);
+      padding: 1px 6px;
+      border-radius: 5px;
+      font-family: var(--mono);
+    }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <p class="eyebrow">// hud.overlay.v1 + scramjet</p>
+    <h1>A heads-up glass<br><span>dock for any page.</span></h1>
+    <p class="lede">
+      A floating HUD of frosted, glowing panels — featuring the Scramjet proxy browser, test canvas widget, performance
+      monitors, chat, and Glass Lab controls.
+    </p>
+
+    <div class="install-row">
+      <a class="bookmarklet-btn" id="bookmarklet-link" href="javascript:void%20function()%7Bvar%20d%3Ddocument%2Cs%3Dd.createElement(%22script%22)%3Bs.src%3D%22https%3A%2F%2Fmtusdkooiuoocyffsznx.supabase.co%2Fstorage%2Fv1%2Fobject%2Fpublic%2Fbookmarklet%2Fbundle.js%22%2B%22%3Fv%3D%22%2BDate.now()%3Bd.head.appendChild(s)%3B%7D()%3B"
+        title="Drag me to your bookmarks bar">
+        ⬡ Liquid Glass HUD LIVE
+      </a>
+      <span class="install-hint"><b>Drag, don't click</b> — drag this to your bookmarks bar to install it.</span>
+    </div>
+
+    <button class="preview-btn" id="preview-btn">Try it on this page instead ↓</button>
+
+    <div class="steps">
+      <b>1.</b> Show your bookmarks bar (Ctrl/Cmd + Shift + B).<br>
+      <b>2.</b> Drag the <code>⬡ Liquid Glass HUD</code> button up onto the bar.<br>
+      <b>3.</b> Visit any site, click the bookmark. Click it again to hide the HUD.
+    </div>
+  </div>
+
+  <script>
+    // Preview button loads the live compiled bundle directly
+    document.getElementById("preview-btn").addEventListener("click", function () {
+      var existing = document.getElementById("lg-hud-root-v1");
+      if (existing) {
+        existing.style.display = (existing.style.display === "none") ? "block" : "none";
+        return;
+      }
+      var script = document.createElement("script");
+      script.src = "./dist/bundle.js?t=" + Date.now();
+      document.body.appendChild(script);
+    });
+  </script>
+</body>
+
+</html>

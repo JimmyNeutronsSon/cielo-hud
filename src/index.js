@@ -1,0 +1,101 @@
+import './styles.css';
+import { buildDock } from './components/dock.js';
+import { buildCapture } from './components/capture.js';
+import { buildAudio } from './components/audio.js';
+import { buildPerf } from './components/perf.js';
+import { buildSocial } from './components/social.js';
+import { buildChat } from './components/chat.js';
+import { buildHighlights } from './components/highlights.js';
+import { buildTestWidget } from './components/testWidget.js';
+import { buildLab } from './components/lab.js';
+import { buildBrowser } from './components/browser.js';
+
+export function liquidGlassHUD() {
+  const ROOT_ID = "lg-hud-root-v1";
+  const existing = document.getElementById(ROOT_ID);
+  if (existing) {
+    existing.style.display = (existing.style.display === "none") ? "block" : "none";
+    return;
+  }
+
+  const root = document.createElement("div");
+  root.id = ROOT_ID;
+  document.body.appendChild(root);
+
+  if (!document.getElementById("lg-custom-font")) {
+    const fontLink = document.createElement("link");
+    fontLink.id = "lg-custom-font";
+    fontLink.rel = "stylesheet";
+    fontLink.href = "https://fonts.googleapis.com/css2?family=Jim+Nightshade&family=Sour+Gummy:ital,wght@0,100..900;1,100..900&display=swap";
+    document.head.appendChild(fontLink);
+  }
+
+  // SVG filter setup for liquid refraction
+  const svgNS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(svgNS, "svg");
+  svg.setAttribute("style", "position:absolute;width:0;height:0;overflow:hidden;");
+  svg.innerHTML = `
+    <filter id="lg-refraction" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
+      <feTurbulence id="lg-turb-1" type="fractalNoise" baseFrequency="0.012" numOctaves="2" seed="9" result="rimNoise"/>
+      <feGaussianBlur in="rimNoise" stdDeviation="2" result="rimNoiseSoft"/>
+      <feTurbulence id="lg-turb-2" type="fractalNoise" baseFrequency="0.05" numOctaves="2" seed="4" result="rippleNoise"/>
+      <feComposite in="rimNoiseSoft" in2="rippleNoise" operator="arithmetic" k1="0" k2="0.7" k3="0.3" k4="0" result="combinedNoise"/>
+      <feDisplacementMap id="lg-disp-1" in="SourceGraphic" in2="combinedNoise" scale="3" xChannelSelector="R" yChannelSelector="G" result="baseWarp"/>
+      <feDisplacementMap id="lg-disp-2" in="baseWarp" in2="combinedNoise" scale="21" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+  `;
+  root.appendChild(svg);
+
+  const dim = document.createElement("div");
+  dim.className = "lg-dim";
+  root.appendChild(dim);
+
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const panels = {};
+
+  const onRemovePanel = (key) => {
+    delete panels[key];
+    const btn = dock.querySelector(`.lg-dock button[data-key="${key}"]`);
+    if (btn) btn.classList.remove("active");
+  };
+
+  let dock = null;
+
+  const builders = {
+    capture: (r, w, h) => buildCapture(r, w, h, onRemovePanel),
+    audio: (r, w, h) => buildAudio(r, w, h, onRemovePanel),
+    perf: (r, w, h) => buildPerf(r, w, h, onRemovePanel),
+    social: (r, w, h) => buildSocial(r, w, h, onRemovePanel),
+    chat: (r, w, h) => buildChat(r, w, h, onRemovePanel),
+    highlights: (r, w, h) => buildHighlights(r, w, h, onRemovePanel),
+    testWidget: (r, w, h) => buildTestWidget(r, w, h, onRemovePanel),
+    lab: (r, w, h) => buildLab(r, w, h, dock, onRemovePanel),
+    browser: (r, w, h) => buildBrowser(r, w, h, onRemovePanel)
+  };
+
+  const togglePanel = (key, btn) => {
+    if (panels[key] && document.body.contains(panels[key])) {
+      panels[key].remove();
+      delete panels[key];
+      btn.classList.remove("active");
+    } else {
+      if (builders[key]) {
+        panels[key] = builders[key](root, vw, vh);
+        btn.classList.add("active");
+      }
+    }
+  };
+
+  dock = buildDock(root, togglePanel, () => {
+    // Let any open widgets tear down their own resources (e.g. an active mic
+    // stream in a voice call) before the HUD is removed from the page.
+    root.dispatchEvent(new CustomEvent("lg:hud-close"));
+    root.remove();
+  });
+
+  // No panels open by default — the user picks them from the dock.
+}
+
+// Auto-run when injected as a bookmarklet
+liquidGlassHUD();
