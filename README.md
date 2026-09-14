@@ -15,7 +15,7 @@
 
 | Widget | What it does |
 | --- | --- |
-| 🧭 **Liquid Scramjet Browser** | A full in-page browser powered by **Scramjet (Anura)**, **BlockAway**, **CroxyProxy**, direct embed, or your own custom gateway — with back/forward/reload, quick bookmarks, home search, and a settings drawer. |
+| 🧭 **Liquid Scramjet Browser** | A full in-page browser with two modes: **Direct Embed** or **Scramjet Proxy** (point it at your own [Scramjet](https://github.com/MercuryWorkshop/scramjet) server) — with back/forward/reload, quick bookmarks, home search, and a settings drawer. |
 | 💬 **Cielo Live Chat & Voice** | Supabase-backed text channels, presence, and voice chat with mute, camera, and screen-share. |
 | 📊 **Performance Monitor** | Live CPU, GPU, VRAM, RAM, and FPS gauges. |
 | 📸 **Capture** | Screenshot, record, and mic controls. |

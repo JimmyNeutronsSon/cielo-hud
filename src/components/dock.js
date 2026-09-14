@@ -5,15 +5,11 @@ export function buildDock(root, onTogglePanel, onCloseAll) {
   dock.className = "lg-dock";
 
   const dockItems = [
-    ["capture", "Capture", ICONS.capture],
-    ["audio", "Audio", ICONS.audio],
-    ["perf", "Performance", ICONS.perf],
     ["chat", "Chat", ICONS.chat],
-    ["social", "Friends", ICONS.social],
-    ["highlights", "Highlights", ICONS.star],
+    ["browser", "Scramjet Browser", ICONS.browser],
     ["testWidget", "Test Widget", ICONS.testWidget],
     ["lab", "Glass Lab", ICONS.lab],
-    ["browser", "Scramjet Browser", ICONS.browser]
+    ["games", "Games", ICONS.games]
   ];
 
   dockItems.forEach(function (d) {

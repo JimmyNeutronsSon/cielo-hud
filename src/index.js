@@ -8,15 +8,11 @@ import { captureBootstrapUsername } from './components/identity.js';
 captureBootstrapUsername();
 
 import { buildDock } from './components/dock.js';
-import { buildCapture } from './components/capture.js';
-import { buildAudio } from './components/audio.js';
-import { buildPerf } from './components/perf.js';
-import { buildSocial } from './components/social.js';
 import { buildChat } from './components/chat.js';
-import { buildHighlights } from './components/highlights.js';
 import { buildTestWidget } from './components/testWidget.js';
 import { buildLab } from './components/lab.js';
 import { buildBrowser } from './components/browser.js';
+import { buildGames } from './components/games.js';
 
 export function liquidGlassHUD() {
   const ROOT_ID = "lg-hud-root-v1";
@@ -71,15 +67,11 @@ export function liquidGlassHUD() {
   let dock = null;
 
   const builders = {
-    capture: (r, w, h) => buildCapture(r, w, h, onRemovePanel),
-    audio: (r, w, h) => buildAudio(r, w, h, onRemovePanel),
-    perf: (r, w, h) => buildPerf(r, w, h, onRemovePanel),
-    social: (r, w, h) => buildSocial(r, w, h, onRemovePanel),
     chat: (r, w, h) => buildChat(r, w, h, onRemovePanel),
-    highlights: (r, w, h) => buildHighlights(r, w, h, onRemovePanel),
     testWidget: (r, w, h) => buildTestWidget(r, w, h, onRemovePanel),
     lab: (r, w, h) => buildLab(r, w, h, dock, onRemovePanel),
-    browser: (r, w, h) => buildBrowser(r, w, h, onRemovePanel)
+    browser: (r, w, h) => buildBrowser(r, w, h, onRemovePanel),
+    games: (r, w, h) => buildGames(r, w, h, onRemovePanel)
   };
 
   const togglePanel = (key, btn) => {

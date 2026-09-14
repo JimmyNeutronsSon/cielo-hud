@@ -577,7 +577,7 @@ export function buildChat(root, vw, vh, onRemove) {
   function getAiReply(q) {
     const l = q.toLowerCase();
     if (l.includes("proxy") || l.includes("scramjet") || l.includes("games")) {
-      return "The Liquid Glass Browser runs live Scramjet (Anura) and BlockAway engines to bypass web filters. Open the Browser widget to play!";
+      return "The Liquid Glass Browser has a Scramjet Proxy mode — point it at your own Scramjet server to bypass web filters. Open the Browser widget to try it!";
     }
     if (l.includes("supa") || l.includes("database") || l.includes("table")) {
       return `Connected to live Supabase DB (${supabaseUrl}). Messages and images are synchronized in real-time!`;

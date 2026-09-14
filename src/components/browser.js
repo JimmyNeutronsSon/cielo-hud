@@ -2,41 +2,6 @@ import { createPanel } from './panel.js';
 import { ICONS } from './icons.js';
 import { lgStore } from './storage.js';
 
-// Ultraviolet / Scramjet XOR encoder
-function encodeUV(url) {
-  if (!url) return url;
-  return encodeURIComponent(
-    url
-      .toString()
-      .split('')
-      .map((char, ind) => (ind % 2 ? String.fromCharCode(char.charCodeAt(0) ^ 2) : char))
-      .join('')
-  );
-}
-
-const PROXY_ENGINES = {
-  anura: {
-    name: "Scramjet / Anura Proxy",
-    url: "https://anura.pro/"
-  },
-  blockaway: {
-    name: "BlockAway Web Proxy",
-    url: "https://www.blockaway.net/"
-  },
-  croxy: {
-    name: "CroxyProxy Web Proxy",
-    url: "https://www.croxyproxy.com/"
-  },
-  direct: {
-    name: "Direct Sandbox Embed",
-    url: ""
-  },
-  custom: {
-    name: "Custom Scramjet Gateway",
-    url: ""
-  }
-};
-
 const BOOKMARKS = [
   { name: "CrazyGames", url: "https://games.crazygames.com", color: "#ec4899" },
   { name: "Wikipedia", url: "https://en.m.wikipedia.org", color: "#38bdf8" },
@@ -49,7 +14,7 @@ const BOOKMARKS = [
 ];
 
 export function buildBrowser(root, vw, vh, onRemove) {
-  let currentEngine = lgStore("lg_browser_engine") || "anura";
+  let currentEngine = lgStore("lg_browser_engine") || "direct";
   let customGateway = lgStore("lg_custom_gateway") || "";
 
   let historyStack = [];
@@ -77,11 +42,8 @@ export function buildBrowser(root, vw, vh, onRemove) {
           <div class="lg-browser-address-bar">
             <div class="lg-browser-mode-select-wrap">
               <select data-engine-select class="lg-browser-mode-select" title="Proxy / Browsing Engine">
-                <option value="anura" ${currentEngine === "anura" ? "selected" : ""}>Scramjet (Anura)</option>
-                <option value="blockaway" ${currentEngine === "blockaway" ? "selected" : ""}>BlockAway Proxy</option>
-                <option value="croxy" ${currentEngine === "croxy" ? "selected" : ""}>CroxyProxy</option>
                 <option value="direct" ${currentEngine === "direct" ? "selected" : ""}>Direct Embed</option>
-                <option value="custom" ${currentEngine === "custom" ? "selected" : ""}>Custom Scramjet</option>
+                <option value="proxy" ${currentEngine === "proxy" ? "selected" : ""}>Scramjet Proxy</option>
               </select>
             </div>
             <input type="text" class="lg-browser-input" data-url-in placeholder="Enter URL or search term..." value="" />
@@ -99,12 +61,12 @@ export function buildBrowser(root, vw, vh, onRemove) {
 
         <!-- Settings Drawer -->
         <div class="lg-browser-settings-drawer" data-settings-drawer style="display:none;">
-          <div style="font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#5ee7ff;margin-bottom:6px;">Custom Scramjet / Ultraviolet Gateway URL</div>
+          <div style="font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#5ee7ff;margin-bottom:6px;">Scramjet Proxy Server URL</div>
           <div style="display:flex;gap:6px;">
-            <input type="text" class="lg-browser-settings-input" data-custom-input value="${customGateway}" placeholder="e.g. https://your-scramjet-host.com/service/" />
+            <input type="text" class="lg-browser-settings-input" data-custom-input value="${customGateway}" placeholder="e.g. https://your-scramjet-host.com" />
             <button class="lg-browser-settings-save-btn" data-btn="save-custom">Save</button>
           </div>
-          <div style="font-size:11px;color:#94a3b8;margin-top:6px;">When 'Custom Scramjet' is selected, URLs will be XOR-encoded and appended to this prefix.</div>
+          <div style="font-size:11px;color:#94a3b8;margin-top:6px;">Point this at a Scramjet instance you deploy yourself (see docs). When 'Scramjet Proxy' is selected, navigation goes through this server.</div>
         </div>
 
         <!-- Main Viewport -->
@@ -126,7 +88,7 @@ export function buildBrowser(root, vw, vh, onRemove) {
             <div class="lg-home-bookmarks-grid" data-bookmarks-grid></div>
 
             <div class="lg-home-tips">
-              <span><strong>Engines:</strong> <em>Scramjet (Anura)</em> &amp; <em>BlockAway</em> bypass all web filters and frame restrictions. Use <em>Direct Embed</em> for standard embeddable tools.</span>
+              <span><strong>Modes:</strong> <em>Direct Embed</em> loads sites straight into the frame (works for embeddable sites only). <em>Scramjet Proxy</em> routes through your own Scramjet server to bypass frame restrictions — set its URL in Settings (⚙).</span>
             </div>
           </div>
 
@@ -149,7 +111,7 @@ export function buildBrowser(root, vw, vh, onRemove) {
               </div>
               <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
                 <button class="lg-error-btn primary" data-btn="open-external">Open in New Tab ↗</button>
-                <button class="lg-error-btn" data-btn="switch-scramjet">Switch to Scramjet Engine</button>
+                <button class="lg-error-btn" data-btn="switch-scramjet">Switch to Scramjet Proxy</button>
                 <button class="lg-error-btn" data-btn="back-to-home">Back to Home</button>
               </div>
             </div>
@@ -274,22 +236,14 @@ export function buildBrowser(root, vw, vh, onRemove) {
     const engine = engineSelect.value;
 
     try {
-      if (engine === "anura") {
-        // Scramjet OS proxy portal
-        iframe.src = PROXY_ENGINES.anura.url;
-      } else if (engine === "blockaway") {
-        // BlockAway proxy portal
-        iframe.src = PROXY_ENGINES.blockaway.url;
-      } else if (engine === "croxy") {
-        // CroxyProxy portal
-        iframe.src = PROXY_ENGINES.croxy.url;
-      } else if (engine === "custom") {
+      if (engine === "proxy") {
         if (!customGateway) {
-          showError("Please set a Custom Scramjet Gateway URL in Settings (⚙).");
+          showError("Please set your Scramjet Proxy server URL in Settings (⚙).");
           return;
         }
-        const gw = customGateway.endsWith("/") ? customGateway : customGateway + "/";
-        iframe.src = gw + encodeUV(targetUrl);
+        // Self-hosted Scramjet exposes its own proxy UI/address bar at its root.
+        // We load that UI here; navigate to specific sites using the address bar inside it.
+        iframe.src = customGateway;
       } else {
         // Direct Embed Mode
         iframe.src = targetUrl;
@@ -347,7 +301,8 @@ export function buildBrowser(root, vw, vh, onRemove) {
   });
 
   btnPopout.addEventListener("click", () => {
-    const url = currentRawUrl || resolveTargetUrl(input.value) || "https://anura.pro";
+    const url = currentRawUrl || resolveTargetUrl(input.value) || customGateway || "";
+    if (!url) return;
     window.open(url, "_blank", "noopener,noreferrer");
   });
 
@@ -361,7 +316,7 @@ export function buildBrowser(root, vw, vh, onRemove) {
     customGateway = val;
     lgStore("lg_custom_gateway", val);
     settingsDrawer.style.display = "none";
-    if (engineSelect.value === "custom" && currentRawUrl) {
+    if (engineSelect.value === "proxy" && currentRawUrl) {
       navigateTo(currentRawUrl, false);
     }
   });
@@ -398,8 +353,8 @@ export function buildBrowser(root, vw, vh, onRemove) {
   });
 
   btnSwitchScramjet.addEventListener("click", () => {
-    engineSelect.value = "anura";
-    lgStore("lg_browser_engine", "anura");
+    engineSelect.value = "proxy";
+    lgStore("lg_browser_engine", "proxy");
     if (currentRawUrl) {
       navigateTo(currentRawUrl, false);
     }
