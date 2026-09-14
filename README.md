@@ -79,6 +79,7 @@ npm run release
 | --- | --- |
 | `npm run build` | Webpack production build → `dist/bundle.js` |
 | `npm run pack` | Generates the tiny loader bookmarklet → `dist/bookmarklet.txt` and syncs `index.html` |
+| `npm run site` | Generates `dist/index.html` — the install page optimized for static hosting (Render) |
 | `npm run deploy` | Uploads `dist/bundle.js` to the Supabase Storage bucket |
 | `npm run release` | `build` → `deploy` |
 
@@ -92,6 +93,17 @@ SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 ```
 
 > ⚠️ **Never commit `.env.local`.** It holds a Supabase **service-role** key with admin rights. It's already excluded via `.gitignore` — copy [`.env.example`](.env.example) to `.env.local` to get started.
+
+## 🌩️ Deploy the landing page (Render)
+
+The `index.html` install/demo page is a plain static site and drops onto [Render](https://render.com) for free. The repo ships a [`render.yaml`](render.yaml) blueprint, so Render can configure itself from the repo:
+
+1. Push the repo to GitHub, then in Render go to **New + → Static Site** and connect the `cielo-hud` repo.
+2. Render auto-detects the blueprint. To set it up manually instead, use:
+   - **Build Command:** `npm ci && npm run build && npm run pack && npm run site`
+   - **Publish Directory:** `dist`
+
+`npm run site` produces `dist/index.html` — an install-page copy whose preview button loads the bundle from the site root (`./bundle.js`) instead of `./dist/bundle.js`, so the preview works once the publish directory *is* `dist`. The drag-and-drop bookmarklet button is unaffected (it points at the hosted Supabase bundle).
 
 ---
 
@@ -127,8 +139,10 @@ cielo-hud/
 ├── webpack.config.js         # Webpack build config
 ├── pack.js                   # Loader bookmarklet generator
 ├── deploy.js                 # Supabase Storage uploader
+├── site.js                   # Static-site build (dist/index.html for Render)
 ├── check_sq.js               # Apostrophe-safety checker for the bookmarklet
-├── .github/workflows/ci.yml  # CI build + pack + verify
+├── render.yaml               # Render static-site blueprint
+├── .github/workflows/ci.yml  # CI build + pack + site + verify
 └── package.json
 ```
 

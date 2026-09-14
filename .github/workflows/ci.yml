@@ -30,5 +30,8 @@ jobs:
       - name: Generate loader bookmarklet
         run: npm run pack
 
+      - name: Generate static site
+        run: npm run site
+
       - name: Verify bookmarklet output
         run: node check_sq.js

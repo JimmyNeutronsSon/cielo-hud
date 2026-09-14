@@ -1,0 +1,9 @@
+# Render Blueprint — static-site deployment of the Cielo landing page.
+# Docs: https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: cielo-hud
+    runtime: static
+    buildCommand: npm ci && npm run build && npm run pack && npm run site
+    staticPublishPath: dist
+    pullRequestPreviewsEnabled: true

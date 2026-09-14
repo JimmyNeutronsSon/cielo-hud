@@ -6,6 +6,7 @@
   "scripts": {
     "build": "webpack",
     "pack": "node pack.js",
+    "site": "node site.js",
     "deploy": "node deploy.js",
     "release": "npm run build && npm run deploy"
   },
