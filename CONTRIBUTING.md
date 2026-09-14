@@ -1,4 +1,4 @@
-# Contributing to Liquid Glass HUD
+# Contributing to Cielo
 
 Thanks for taking the time to contribute! 🎉 Your help makes this project better.
 
@@ -7,8 +7,8 @@ Thanks for taking the time to contribute! 🎉 Your help makes this project bett
 1. **Fork** the repository and clone your fork:
 
    ```bash
-   git clone https://github.com/<your-username>/liquid-glass-hud.git
-   cd liquid-glass-hud
+   git clone https://github.com/<your-username>/cielo-hud.git
+   cd cielo-hud
    ```
 
 2. **Install dependencies:**

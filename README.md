@@ -1,6 +1,6 @@
-# ⬡ Liquid Glass HUD
+# ⬡ Cielo
 
-A floating, frosted-glass **heads-up display** that drops onto any website as a drag-and-drop bookmarklet. Built with Webpack and shipped as a single self-contained script — featuring a built-in proxy browser, live chat & voice, performance monitors, screen-capture tools, and a real-time liquid-refraction lab.
+**Cielo** (see-ELL-oh — *"sky"* in Spanish & Italian) is a floating, frosted-glass **heads-up display** that drops onto any website as a drag-and-drop bookmarklet. Built with Webpack and shipped as a single self-contained script — featuring a built-in proxy browser, live chat & voice, performance monitors, screen-capture tools, and a real-time liquid-refraction lab.
 
 > **No installs. No extensions. Just drag, click, done.**
 
@@ -16,7 +16,7 @@ A floating, frosted-glass **heads-up display** that drops onto any website as a 
 | Widget | What it does |
 | --- | --- |
 | 🧭 **Liquid Scramjet Browser** | A full in-page browser powered by **Scramjet (Anura)**, **BlockAway**, **CroxyProxy**, direct embed, or your own custom gateway — with back/forward/reload, quick bookmarks, home search, and a settings drawer. |
-| 💬 **Welkin Live Chat & Voice** | Supabase-backed text channels, direct messages, presence, and voice chat with mute, camera, and screen-share. |
+| 💬 **Cielo Live Chat & Voice** | Supabase-backed text channels, direct messages, presence, and voice chat with mute, camera, and screen-share. |
 | 📊 **Performance Monitor** | Live CPU, GPU, VRAM, RAM, and FPS gauges. |
 | 📸 **Capture** | Screenshot, record, and mic controls. |
 | 🧪 **Glass Lab** | Tune the glass in real time — edge & rim intensity, blur, tint, ripple, center-warp, and a one-click **randomize** button. |
@@ -31,10 +31,10 @@ A floating, frosted-glass **heads-up display** that drops onto any website as a 
 
 ## 🚀 Install
 
-The quickest way: open `index.html` (hosted anywhere) and drag the **⬡ Liquid Glass HUD LIVE** button onto your bookmarks bar.
+The quickest way: open `index.html` (hosted anywhere) and drag the **⬡ Cielo LIVE** button onto your bookmarks bar.
 
 1. **Show your bookmarks bar** — `Ctrl + Shift + B` (Windows/Linux) or `Cmd + Shift + B` (Mac).
-2. **Drag, don't click** — drag the `⬡ Liquid Glass HUD` button from the page up onto the bar.
+2. **Drag, don't click** — drag the `⬡ Cielo` button from the page up onto the bar.
 3. **Use it** — visit any site and click the bookmark. Click it again to hide the HUD.
 
 ### How the tiny loader works
@@ -105,7 +105,7 @@ A bookmarklet can't load external CSS or asset files — host pages enforce **CO
 - **`terser-webpack-plugin`** — mangles and minifies with `ascii_only` and double quotes so the output survives being URL-encoded into a `javascript:` bookmarklet.
 
 ```
-liquid-glass-hud/
+cielo-hud/
 ├── src/
 │   ├── index.js              # Entry point & HUD toggle logic
 │   ├── styles.css            # Glass styling & animations

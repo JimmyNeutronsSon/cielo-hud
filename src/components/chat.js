@@ -47,7 +47,7 @@ export function buildChat(root, vw, vh, onRemove) {
     y: 100,
     width: Math.min(820, Math.max(520, Math.floor(vw * 0.72))),
     height: Math.min(600, Math.max(420, Math.floor(vh * 0.7))),
-    title: "Welkin Live Chat & Voice",
+    title: "Cielo Live Chat & Voice",
     body: `
       <div class="lg-chat-container">
         <!-- Left Sidebar: Channels, Voice, DMs -->
@@ -124,7 +124,7 @@ export function buildChat(root, vw, vh, onRemove) {
 
           <!-- Settings Drawer -->
           <div class="lg-chat-settings-drawer" data-settings-drawer style="display:none;">
-            <div class="lg-chat-settings-title">⚡ Welkin Account</div>
+            <div class="lg-chat-settings-title">⚡ Cielo Account</div>
             <div class="lg-chat-settings-grid">
               <label style="grid-column: span 2;">Your Username / Alias:
                 <input type="text" data-cfg-username value="${escapeHtml(myUsername)}" placeholder="e.g. Alex" />
@@ -395,7 +395,7 @@ export function buildChat(root, vw, vh, onRemove) {
       { name: "Ihtiram", status: "online" },
       { name: "michael", status: "online" },
       { name: "Atharva Joshi", status: "online" },
-      { name: "Welkin AI", status: "bot" }
+      { name: "Cielo AI", status: "bot" }
     ];
 
     dmList.forEach(u => {
@@ -659,13 +659,13 @@ export function buildChat(root, vw, vh, onRemove) {
         console.error("[Liquid Chat] Send error:", e);
       }
 
-      // Welkin AI Assistant Response
+      // Cielo AI Assistant Response
       if (activeTarget.id === "ai" || text.startsWith("/ai ")) {
         const query = text.startsWith("/ai ") ? text.replace("/ai ", "") : text;
         setTimeout(() => {
           const botReply = {
             id: "bot_" + Date.now(),
-            author: "Welkin AI",
+            author: "Cielo AI",
             text: getAiReply(query),
             image: null,
             time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -729,7 +729,7 @@ export function buildChat(root, vw, vh, onRemove) {
     if (l.includes("supa") || l.includes("database") || l.includes("table")) {
       return `Connected to live Supabase DB (${supabaseUrl}). Messages, images, and DMs are synchronized in real-time!`;
     }
-    return `Welkin AI: Got your message "${q}". Live cloud rooms & voice chat are ready!`;
+    return `Cielo AI: Got your message "${q}". Live cloud rooms & voice chat are ready!`;
   }
 
   function setPendingImage(dataUrl) {

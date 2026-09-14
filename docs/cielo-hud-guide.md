@@ -1,4 +1,4 @@
-# Comprehensive Guide: Building and Bundling the Liquid Glass HUD Bookmarklet with Webpack
+# Comprehensive Guide: Building and Bundling the Cielo HUD Bookmarklet with Webpack
 
 This guide details how advanced client-side bookmarklets (inspired by projects like `car-axle-client`) are architected, bundled using **Webpack**, and turned into a single-file executable bookmarklet string.
 
@@ -18,7 +18,7 @@ Webpack solves this by bundling everything into a **self-executing IIFE (Immedia
 ## 2. Project Directory Structure
 
 ```text
-liquid-glass-hud/
+cielo-hud/
 ├── package.json
 ├── webpack.config.js
 └── src/
@@ -37,9 +37,9 @@ liquid-glass-hud/
 ### `package.json`
 ```json
 {
-  "name": "liquid-glass-hud",
+  "name": "cielo-hud",
   "version": "1.0.0",
-  "description": "Standalone Webpack-bundled Liquid Glass HUD Bookmarklet",
+  "description": "Cielo — standalone Webpack-bundled liquid-glass HUD bookmarklet",
   "main": "src/index.js",
   "scripts": {
     "build": "webpack",
@@ -224,5 +224,5 @@ console.log("SUCCESS: Bookmarklet generated at dist/bookmarklet.txt");
    ```
 2. Open the generated `dist/bookmarklet.txt` file and copy the entire string (starting with `javascript:(function(){...}`).
 3. Open your browser's bookmarks bar (`Ctrl + Shift + B` or `Cmd + Shift + B`).
-4. Create a new bookmark, name it **"Liquid Glass HUD"**, and paste the code into the URL field.
+4. Create a new bookmark, name it **"Cielo"**, and paste the code into the URL field.
 5. Click the bookmark on any webpage to trigger your Webpack-bundled HUD client!
