@@ -1,4 +1,4 @@
-import './styles.css';
+import hudCss from './styles.css';
 import { captureBootstrapUsername } from './components/identity.js';
 
 // Must run synchronously at the top of the bundle -- document.currentScript
@@ -9,10 +9,10 @@ captureBootstrapUsername();
 
 import { buildDock } from './components/dock.js';
 import { buildChat } from './components/chat.js';
-import { buildTestWidget } from './components/testWidget.js';
-import { buildLab } from './components/lab.js';
+import { buildSettings, applySavedTheme } from './components/settings.js';
 import { buildBrowser } from './components/browser.js';
 import { buildGames } from './components/games.js';
+import { buildMusic } from './components/music.js';
 
 export function liquidGlassHUD() {
   const ROOT_ID = "lg-hud-root-v1";
@@ -22,17 +22,26 @@ export function liquidGlassHUD() {
     return;
   }
 
+  const host = document.createElement("div");
+  host.id = ROOT_ID;
+  document.body.appendChild(host);
+
+  // Everything lives inside a shadow root so the host page's own CSS (resets,
+  // global `svg`/`button`/`*` rules, icon-font overrides, etc.) can never leak
+  // in and break our icons/layout, and our styles can never leak out either.
+  const shadow = host.attachShadow({ mode: "open" });
+
+  const styleTag = document.createElement("style");
+  styleTag.textContent = hudCss;
+  shadow.appendChild(styleTag);
+
   const root = document.createElement("div");
   root.id = ROOT_ID;
-  document.body.appendChild(root);
+  shadow.appendChild(root);
 
-  if (!document.getElementById("lg-custom-font")) {
-    const fontLink = document.createElement("link");
-    fontLink.id = "lg-custom-font";
-    fontLink.rel = "stylesheet";
-    fontLink.href = "https://fonts.googleapis.com/css2?family=Jim+Nightshade&family=Sour+Gummy:ital,wght@0,100..900;1,100..900&display=swap";
-    document.head.appendChild(fontLink);
-  }
+  // Restore the accent theme picked in Settings before anything renders, so
+  // there's no flash of the default colors.
+  applySavedTheme(root);
 
   // SVG filter setup for liquid refraction
   const svgNS = "http://www.w3.org/2000/svg";
@@ -68,14 +77,14 @@ export function liquidGlassHUD() {
 
   const builders = {
     chat: (r, w, h) => buildChat(r, w, h, onRemovePanel),
-    testWidget: (r, w, h) => buildTestWidget(r, w, h, onRemovePanel),
-    lab: (r, w, h) => buildLab(r, w, h, dock, onRemovePanel),
+    settings: (r, w, h) => buildSettings(r, w, h, dock, onRemovePanel),
     browser: (r, w, h) => buildBrowser(r, w, h, onRemovePanel),
-    games: (r, w, h) => buildGames(r, w, h, onRemovePanel)
+    games: (r, w, h) => buildGames(r, w, h, onRemovePanel),
+    music: (r, w, h) => buildMusic(r, w, h, onRemovePanel)
   };
 
   const togglePanel = (key, btn) => {
-    if (panels[key] && document.body.contains(panels[key])) {
+    if (panels[key] && panels[key].isConnected) {
       panels[key].remove();
       delete panels[key];
       btn.classList.remove("active");

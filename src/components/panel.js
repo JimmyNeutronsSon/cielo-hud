@@ -44,7 +44,7 @@ export function createPanel(root, opts, onRemove) {
       <span class="lg-title">${opts.title}</span>
       <button class="lg-x" data-close>${ICONS.close}</button>
     </div>
-    <div class="lg-body">${opts.body}</div>
+    <div class="lg-body ${opts.bodyClass || ""}">${opts.body}</div>
   `;
   root.appendChild(p);
   makeDraggable(p, p.querySelector(".lg-head"));

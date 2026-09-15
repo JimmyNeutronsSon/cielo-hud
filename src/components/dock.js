@@ -7,9 +7,9 @@ export function buildDock(root, onTogglePanel, onCloseAll) {
   const dockItems = [
     ["chat", "Chat", ICONS.chat],
     ["browser", "Scramjet Browser", ICONS.browser],
-    ["testWidget", "Test Widget", ICONS.testWidget],
-    ["lab", "Glass Lab", ICONS.lab],
-    ["games", "Games", ICONS.games]
+    ["games", "Games", ICONS.games],
+    ["music", "Music", ICONS.music],
+    ["settings", "Settings", ICONS.gear]
   ];
 
   dockItems.forEach(function (d) {

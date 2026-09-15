@@ -25,7 +25,7 @@ export function buildPerf(root, vw, vh, onRemove) {
   }
 
   const iv = setInterval(function () {
-    if (!document.body.contains(p)) {
+    if (!p.isConnected) {
       clearInterval(iv);
       return;
     }

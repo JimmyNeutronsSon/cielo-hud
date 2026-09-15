@@ -807,7 +807,7 @@ export function buildChat(root, vw, vh, onRemove) {
   fetchMessages();
 
   const pollInterval = setInterval(() => {
-    if (document.body.contains(p)) {
+    if (p.isConnected) {
       fetchMessages();
     } else {
       clearInterval(pollInterval);

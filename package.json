@@ -4,6 +4,7 @@
   "description": "Cielo — a standalone, Webpack-bundled liquid-glass HUD bookmarklet",
   "main": "src/index.js",
   "scripts": {
+    "games:catalog": "node scripts/build-games-catalog.mjs",
     "build": "webpack",
     "pack": "node pack.js",
     "site": "node site.js",
