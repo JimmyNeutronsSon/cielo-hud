@@ -35,3 +35,9 @@ jobs:
 
       - name: Verify bookmarklet output
         run: node check_sq.js
+
+      - name: Deploy bundle to Supabase
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node deploy.js
