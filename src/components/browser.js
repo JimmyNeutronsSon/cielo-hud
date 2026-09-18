@@ -2,6 +2,8 @@ import { createPanel } from './panel.js';
 import { ICONS } from './icons.js';
 import { lgStore } from './storage.js';
 
+const SCRAMJET_GATEWAY = "https://api.ritebooks.com";
+
 const BOOKMARKS = [
   { name: "CrazyGames", url: "https://games.crazygames.com", color: "#ec4899" },
   { name: "Wikipedia", url: "https://en.m.wikipedia.org", color: "#38bdf8" },
@@ -15,7 +17,6 @@ const BOOKMARKS = [
 
 export function buildBrowser(root, vw, vh, onRemove) {
   let currentEngine = lgStore("lg_browser_engine") || "direct";
-  let customGateway = lgStore("lg_custom_gateway") || "";
 
   let historyStack = [];
   let historyIndex = -1;
@@ -27,7 +28,7 @@ export function buildBrowser(root, vw, vh, onRemove) {
     y: 120,
     width: Math.min(840, Math.max(480, Math.floor(vw * 0.72))),
     height: Math.min(600, Math.max(400, Math.floor(vh * 0.68))),
-    title: "Liquid Scramjet Browser",
+    title: "Liquid Browser",
     body: `
       <div class="lg-browser-container">
         <!-- Top Toolbar -->
@@ -50,24 +51,10 @@ export function buildBrowser(root, vw, vh, onRemove) {
             <button class="lg-browser-go-btn" data-btn="go" title="Navigate">${ICONS.search}</button>
           </div>
 
-          <div class="lg-browser-aux-btns">
-            <button class="lg-browser-icon-btn" data-btn="popout" title="Open in New Tab">${ICONS.external}</button>
-            <button class="lg-browser-icon-btn" data-btn="settings" title="Custom Gateway Settings">${ICONS.gear}</button>
-          </div>
         </div>
 
         <!-- Progress Bar -->
         <div class="lg-browser-progress" data-progress></div>
-
-        <!-- Settings Drawer -->
-        <div class="lg-browser-settings-drawer" data-settings-drawer style="display:none;">
-          <div style="font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#5ee7ff;margin-bottom:6px;">Scramjet Proxy Server URL</div>
-          <div style="display:flex;gap:6px;">
-            <input type="text" class="lg-browser-settings-input" data-custom-input value="${customGateway}" placeholder="e.g. https://your-scramjet-host.com" />
-            <button class="lg-browser-settings-save-btn" data-btn="save-custom">Save</button>
-          </div>
-          <div style="font-size:11px;color:#94a3b8;margin-top:6px;">Point this at a Scramjet instance you deploy yourself (see docs). When 'Scramjet Proxy' is selected, navigation goes through this server.</div>
-        </div>
 
         <!-- Main Viewport -->
         <div class="lg-browser-viewport" data-browser-wrap>
@@ -88,7 +75,7 @@ export function buildBrowser(root, vw, vh, onRemove) {
             <div class="lg-home-bookmarks-grid" data-bookmarks-grid></div>
 
             <div class="lg-home-tips">
-              <span><strong>Modes:</strong> <em>Direct Embed</em> loads sites straight into the frame (works for embeddable sites only). <em>Scramjet Proxy</em> routes through your own Scramjet server to bypass frame restrictions — set its URL in Settings (⚙).</span>
+              <span><strong>Modes:</strong> <em>Direct Embed</em> loads sites straight into the frame (works for embeddable sites only). <em>Scramjet Proxy</em> routes through the Scramjet server to bypass frame restrictions.</span>
             </div>
           </div>
 
@@ -110,8 +97,7 @@ export function buildBrowser(root, vw, vh, onRemove) {
                 This site may enforce strict frame-security policies (X-Frame-Options/CSP).
               </div>
               <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
-                <button class="lg-error-btn primary" data-btn="open-external">Open in New Tab ↗</button>
-                <button class="lg-error-btn" data-btn="switch-scramjet">Switch to Scramjet Proxy</button>
+                <button class="lg-error-btn primary" data-btn="switch-scramjet">Switch to Scramjet Proxy</button>
                 <button class="lg-error-btn" data-btn="back-to-home">Back to Home</button>
               </div>
             </div>
@@ -129,11 +115,6 @@ export function buildBrowser(root, vw, vh, onRemove) {
   const btnForward = p.querySelector("[data-btn='forward']");
   const btnReload = p.querySelector("[data-btn='reload']");
   const btnHome = p.querySelector("[data-btn='home']");
-  const btnPopout = p.querySelector("[data-btn='popout']");
-  const btnSettings = p.querySelector("[data-btn='settings']");
-  const settingsDrawer = p.querySelector("[data-settings-drawer]");
-  const customInput = p.querySelector("[data-custom-input]");
-  const btnSaveCustom = p.querySelector("[data-btn='save-custom']");
   const progressBar = p.querySelector("[data-progress]");
   const homePortal = p.querySelector("[data-home-portal]");
   const homeSearch = p.querySelector("[data-home-search]");
@@ -142,7 +123,6 @@ export function buildBrowser(root, vw, vh, onRemove) {
   const iframe = p.querySelector("[data-proxy-frame]");
   const errorOverlay = p.querySelector("[data-error-overlay]");
   const errorMsg = p.querySelector("[data-error-msg]");
-  const btnOpenExternal = p.querySelector("[data-btn='open-external']");
   const btnSwitchScramjet = p.querySelector("[data-btn='switch-scramjet']");
   const btnBackToHome = p.querySelector("[data-btn='back-to-home']");
 
@@ -237,14 +217,9 @@ export function buildBrowser(root, vw, vh, onRemove) {
 
     try {
       if (engine === "proxy") {
-        if (!customGateway) {
-          showError("Please set your Scramjet Proxy server URL in Settings (⚙).");
-          return;
-        }
         // Scramjet's own template app supports a ?goto= param that auto-navigates
         // and covers its intro UI with the full-screen proxied frame.
-        const gw = customGateway.replace(/\/+$/, "");
-        iframe.src = gw + "/?goto=" + encodeURIComponent(targetUrl);
+        iframe.src = SCRAMJET_GATEWAY + "/?goto=" + encodeURIComponent(targetUrl);
       } else {
         // Direct Embed Mode
         iframe.src = targetUrl;
@@ -301,27 +276,6 @@ export function buildBrowser(root, vw, vh, onRemove) {
     showHome();
   });
 
-  btnPopout.addEventListener("click", () => {
-    const url = currentRawUrl || resolveTargetUrl(input.value) || customGateway || "";
-    if (!url) return;
-    window.open(url, "_blank", "noopener,noreferrer");
-  });
-
-  btnSettings.addEventListener("click", () => {
-    const isShown = settingsDrawer.style.display !== "none";
-    settingsDrawer.style.display = isShown ? "none" : "block";
-  });
-
-  btnSaveCustom.addEventListener("click", () => {
-    const val = customInput.value.trim();
-    customGateway = val;
-    lgStore("lg_custom_gateway", val);
-    settingsDrawer.style.display = "none";
-    if (engineSelect.value === "proxy" && currentRawUrl) {
-      navigateTo(currentRawUrl, false);
-    }
-  });
-
   engineSelect.addEventListener("change", () => {
     lgStore("lg_browser_engine", engineSelect.value);
     if (!isHome && currentRawUrl) {
@@ -344,12 +298,6 @@ export function buildBrowser(root, vw, vh, onRemove) {
         const resolved = resolveTargetUrl(query);
         navigateTo(resolved);
       }
-    }
-  });
-
-  btnOpenExternal.addEventListener("click", () => {
-    if (currentRawUrl) {
-      window.open(currentRawUrl, "_blank", "noopener,noreferrer");
     }
   });
 

@@ -1,93 +1,109 @@
 // Music source for the Music widget.
 //
-// "youtube" — metadata (title/artist/thumb/duration) comes from public Piped
-// instances (open-source, CORS-open mirrors of YouTube's search/trending
-// pages: https://github.com/TeamPiped/Piped). Playback does NOT go through
-// Piped's own audio-stream extraction — that path is routinely rate-limited
-// by YouTube ("Sign in to confirm you're not a bot") on public instances.
-// Instead the resolved video id is handed to YouTube's own IFrame Player API
-// (loaded in music.js), which is the same officially-embeddable playback
-// every "YouTube in an iframe" site uses — no proxying of audio required,
-// and nothing here bypasses any playback restriction YouTube itself enforces.
+// "jiosaavn" — search/metadata/streaming all come from public unofficial
+// JioSaavn API mirrors (open-source wrappers around jiosaavn.com's own
+// endpoints: https://github.com/sumitkolhe/jiosaavn-api). Songs stream
+// directly from JioSaavn's own CDN (saavncdn.com) via a plain <audio>
+// element — no separate proxying needed, since <audio> playback doesn't
+// require CORS the way reading raw samples with Web Audio API would.
 
 // Public instances rotate in and out of service, so each call tries them in
 // order and uses the first one that answers rather than pinning one host.
-const PIPED_HOSTS = [
-  "https://api.piped.private.coffee",
-  "https://pipedapi.adminforge.de",
-  "https://pipedapi.r4fo.com",
-  "https://piped-api.hostux.net",
+const JIOSAAVN_HOSTS = [
+  "https://jiosaavn-api-seven-xi.vercel.app",
+  "https://jiosaavn-api3.jj192837465jj.workers.dev",
+  "https://jiosaavn-api.jj192837465jj.workers.dev",
+  "https://jiosaavn-api.fantoo.workers.dev",
+  "https://jiosaavn-api.softyangel8.workers.dev",
 ];
 
 // ── Shared track shape ──────────────────────────────────────────────────────
 // { id, name, artist, thumb, cover, duration (seconds), source }
 
-function videoIdFromUrl(url) {
-  const m = /[?&]v=([^&]+)/.exec(url || "");
-  return m ? m[1] : (url || "").split("/").pop();
+function decodeHtmlEntities(str) {
+  if (!str) return "";
+  return str
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;/g, "'")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">");
 }
 
-function fromPipedStream(t) {
+function bestImage(images) {
+  if (!Array.isArray(images) || !images.length) return "";
+  return images[images.length - 1].url || images[0].url || "";
+}
+
+function bestDownloadUrl(urls) {
+  if (!Array.isArray(urls) || !urls.length) return "";
+  return urls[urls.length - 1].url || urls[0].url || "";
+}
+
+function artistNames(song) {
+  if (song.artists && song.artists.primary && song.artists.primary.length) {
+    return song.artists.primary.map((a) => decodeHtmlEntities(a.name)).join(", ");
+  }
+  return decodeHtmlEntities(song.subtitle || song.primaryArtists || "");
+}
+
+function fromJioSaavnSong(song) {
   return {
-    id: videoIdFromUrl(t.url),
-    name: t.title || "",
-    artist: t.uploaderName || "",
-    thumb: t.thumbnail || "",
-    cover: t.thumbnail || "",
-    duration: Number(t.duration) > 0 ? Number(t.duration) : 0,
-    source: "youtube",
+    id: song.id,
+    name: decodeHtmlEntities(song.name || song.title || ""),
+    artist: artistNames(song),
+    thumb: bestImage(song.image),
+    cover: bestImage(song.image),
+    duration: Number(song.duration) > 0 ? Number(song.duration) : 0,
+    downloadUrl: song.downloadUrl,
+    source: "jiosaavn",
   };
 }
 
-// ── YouTube (via Piped metadata) backend ────────────────────────────────────
-async function pipedFetch(path) {
+// ── JioSaavn backend ─────────────────────────────────────────────────────
+async function jioSaavnFetch(path) {
   let lastErr = null;
-  for (const host of PIPED_HOSTS) {
+  for (const host of JIOSAAVN_HOSTS) {
     try {
       const res = await fetch(`${host}${path}`, { headers: { Accept: "application/json" } });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
-      if (json && json.error) throw new Error(json.error);
+      if (!json || json.success === false) throw new Error((json && json.message) || "API error");
       return json;
     } catch (err) {
       lastErr = err;
     }
   }
-  throw lastErr || new Error("No Piped instance responded");
+  throw lastErr || new Error("No JioSaavn instance responded");
 }
 
-const YOUTUBE = {
+const JIOSAAVN = {
   async trending() {
-    const items = await pipedFetch("/trending?region=US");
-    return (Array.isArray(items) ? items : []).map(fromPipedStream).filter((t) => t.id);
+    const json = await jioSaavnFetch("/api/search/songs?query=top%20hits&page=1&limit=20");
+    return (json.data?.results || []).map(fromJioSaavnSong).filter((t) => t.id);
   },
   async search(query) {
-    // `music_songs` only matches YouTube Music's official catalog metadata,
-    // which misses anything not released through it (unofficial uploads,
-    // fan edits, leaks, etc.) — `videos` is the same search youtube.com
-    // itself uses and finds those too.
-    const json = await pipedFetch(`/search?q=${encodeURIComponent(query)}&filter=videos`);
-    return (json.items || [])
-      .filter((it) => it.type === "stream")
-      .map(fromPipedStream)
-      .filter((t) => t.id);
+    const json = await jioSaavnFetch(`/api/search/songs?query=${encodeURIComponent(query)}&page=1&limit=20`);
+    return (json.data?.results || []).map(fromJioSaavnSong).filter((t) => t.id);
   },
-  // No network call: the id goes straight to YouTube's own IFrame Player API.
+  // No network call: the highest-quality download URL streams directly.
   async resolve(track) {
-    return { kind: "youtube", id: track.id };
+    const url = bestDownloadUrl(track.downloadUrl);
+    if (!url) throw new Error("No playable stream available for this track");
+    return { kind: "audio", url };
   },
 };
 
-const BACKENDS = { youtube: YOUTUBE };
+const BACKENDS = { jiosaavn: JIOSAAVN };
 
 export function backendFor(track) {
-  return BACKENDS[track.source] || YOUTUBE;
+  return BACKENDS[track.source] || JIOSAAVN;
 }
 
 export function sourceLabel() {
-  return "YouTube";
+  return "JioSaavn";
 }
 
 export async function loadTracks(method, arg) {
-  return YOUTUBE[method](arg);
+  return JIOSAAVN[method](arg);
 }

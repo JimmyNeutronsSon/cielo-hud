@@ -58,7 +58,7 @@ export function buildChat(root, vw, vh, onRemove) {
     y: 100,
     width: Math.min(820, Math.max(520, Math.floor(vw * 0.72))),
     height: Math.min(600, Math.max(420, Math.floor(vh * 0.7))),
-    title: "Cielo Live Chat & Voice",
+    title: "Chat",
     body: `
       <div class="lg-chat-container">
         <!-- Left Sidebar: Channels, Voice -->
