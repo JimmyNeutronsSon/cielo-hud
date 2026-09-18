@@ -241,9 +241,10 @@ export function buildBrowser(root, vw, vh, onRemove) {
           showError("Please set your Scramjet Proxy server URL in Settings (⚙).");
           return;
         }
-        // Self-hosted Scramjet exposes its own proxy UI/address bar at its root.
-        // We load that UI here; navigate to specific sites using the address bar inside it.
-        iframe.src = customGateway;
+        // Scramjet's own template app supports a ?goto= param that auto-navigates
+        // and covers its intro UI with the full-screen proxied frame.
+        const gw = customGateway.replace(/\/+$/, "");
+        iframe.src = gw + "/?goto=" + encodeURIComponent(targetUrl);
       } else {
         // Direct Embed Mode
         iframe.src = targetUrl;

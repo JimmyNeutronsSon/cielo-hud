@@ -2,11 +2,9 @@ import { createPanel } from "./panel.js";
 import { ICONS } from "./icons.js";
 import { GAME_CATALOG, GAME_SOURCES } from "../games/catalog.js";
 
-// ── Source metadata (colors used for the small "src" pills on each card) ──
+// ── Source metadata (colors used for the small "src" pill on built-in cards) ──
 const SRC_META = {
-  gn: { label: "GN-Math", color: "#5ee7ff" },
-  vp: { label: "Vapor", color: "#c084fc" },
-  tf: { label: "Truffled", color: "#fbbf24" },
+  gn: { label: "", color: "#5ee7ff" },
   builtin: { label: "Built-in", color: "#4ade80" },
 };
 
@@ -18,9 +16,9 @@ const BUILTIN_GAME = {
 
 const allGames = [BUILTIN_GAME, ...GAME_CATALOG];
 
-// gn-math / vapor pages are fetched as text (raw.githubusercontent is the only
-// public mirror — jsDelivr actively blocks the gn-math user — and raw forbids
-// direct framing with X-Frame-Options: deny) and injected through srcdoc.
+// gn-math pages are fetched as text (raw.githubusercontent is the only public
+// mirror — jsDelivr actively blocks the gn-math user — and raw forbids direct
+// framing with X-Frame-Options: deny) and injected through srcdoc.
 // The sandbox flags below are what sub-resource-heavy web games need to run.
 const SANDBOX =
   "allow-scripts allow-same-origin allow-forms allow-pointer-lock allow-popups " +
@@ -31,19 +29,14 @@ const htmlCache = new Map();
 
 // ── URL helpers ──────────────────────────────────────────────────────────────
 function thumbUrl(e) {
-  if ((e.s === "gn" || e.s === "vp") && e.c) {
-    return `${GAME_SOURCES.vaporCoversRaw}/${e.i}.png`;
-  }
-  if (e.s === "tf" && e.t) {
-    return `${GAME_SOURCES.truffledOrigin}/${e.t}`;
+  if (e.s === "gn" && e.c) {
+    return `${GAME_SOURCES.coversRaw}/${e.i}.png`;
   }
   return "";
 }
 
 function sourcePageUrl(e) {
   if (e.s === "gn") return `https://github.com/gn-math/html/blob/main/${e.f}`;
-  if (e.s === "vp") return `https://github.com/technonyte00/vapor-v4-games/blob/main/html/html-main/${e.f}`;
-  if (e.s === "tf") return `${GAME_SOURCES.truffledOrigin}${e.u}`;
   return "";
 }
 
@@ -84,39 +77,6 @@ async function launchGnMath(e, frame) {
   frame.srcdoc = html;
 }
 
-async function launchVapor(e, frame) {
-  const url = `${GAME_SOURCES.vaporHtmlRaw}/${e.f}`;
-  let html;
-  try {
-    html = await fetchCached(url);
-  } catch (err) {
-    showLoadError(frame, `Could not fetch "${e.n}" from vapor-v4-games.\n${err.message}`);
-    return;
-  }
-  // Vapor wrappers carry `<base href="/game/assets/<slug>/">` pointing at the
-  // repo's assets/assets-main/<slug>/ folder. Rewrite it to the raw mirror so
-  // relative asset requests resolve while staying 100% sourced from the repo.
-  if (e.b) {
-    const slug = e.b.replace(/^\/game\/assets\//, "").replace(/\/+$/, "");
-    const assetUrl = `${GAME_SOURCES.vaporAssetsRaw}/${slug}/`;
-    html = html.replace(
-      /<base\b[^>]*href="[^"]*\/game\/assets\/[^"]*"/i,
-      `<base href="${assetUrl}"`
-    );
-  }
-  frame.src = "about:blank";
-  frame.sandbox = SANDBOX;
-  frame.srcdoc = html;
-}
-
-function launchTruffled(e, frame) {
-  // truffled.lol ships its own iframe / unityframe pages designed for embedding;
-  // no srcdoc hack needed and their COOP/COEP headers are kept as-is.
-  const frameKind = e.k ? "unityframe" : "iframe";
-  frame.removeAttribute("sandbox");
-  frame.src = `${GAME_SOURCES.truffledOrigin}/${frameKind}.html?url=${encodeURIComponent(e.u)}`;
-}
-
 export function buildGames(root, vw, vh, onRemove) {
   const width = Math.min(900, Math.max(560, Math.floor(vw * 0.85)));
   const height = Math.min(660, Math.max(420, Math.floor(vh * 0.8)));
@@ -145,10 +105,12 @@ export function buildGames(root, vw, vh, onRemove) {
         <div class="lg-games-player" data-player>
           <div class="lg-games-playerbar">
             <button class="lg-games-pbtn" data-back title="Back to library">${ICONS.back}</button>
+            <span class="lg-games-pthumb" data-pthumb></span>
             <div class="lg-games-pinfo">
               <span class="lg-games-pname" data-pname></span>
               <span class="lg-games-psrc" data-psrc></span>
             </div>
+            <button class="lg-games-pbtn" data-fullscreen title="Full screen">${ICONS.maximize}</button>
             <button class="lg-games-pbtn" data-external title="Open at its source in a new tab">${ICONS.external}</button>
           </div>
           <div class="lg-games-frame-wrap" data-frame-wrap></div>
@@ -170,9 +132,6 @@ export function buildGames(root, vw, vh, onRemove) {
   // ── Source filter chips ──
   const chipDefs = [
     ["all", "All"],
-    ["gn", "GN-Math"],
-    ["tf", "Truffled"],
-    ["vp", "Vapor"],
     ["builtin", "Built-in"]
   ];
   for (const [k, label] of chipDefs) {
@@ -193,7 +152,7 @@ export function buildGames(root, vw, vh, onRemove) {
   function matches(g, q) {
     if (srcFilter !== "all" && g.s !== srcFilter) return false;
     if (!q) return true;
-    const hay = `${g.n} ${g.f || ""} ${g.i !== undefined ? String(g.i) : ""} ${g.u || ""}`;
+    const hay = `${g.n} ${g.f || ""} ${g.i !== undefined ? String(g.i) : ""}`;
     return hay.toLowerCase().includes(q);
   }
 
@@ -234,7 +193,7 @@ export function buildGames(root, vw, vh, onRemove) {
     const url = thumbUrl(g);
     if (url) {
       const img = new Image();
-      img.loading = "lazy";
+      img.decoding = "async";
       img.alt = "";
       img.addEventListener("load", () => {
         if (img.naturalWidth > 0 && img.naturalHeight > 0) cover.classList.add("has-img");
@@ -250,27 +209,43 @@ export function buildGames(root, vw, vh, onRemove) {
     nameEl.className = "lg-games-name";
     nameEl.textContent = g.n;
     nameEl.title = g.n + (g.d ? `\n${g.d}` : "");
-    const tag = document.createElement("span");
-    tag.className = "lg-games-tag";
-    tag.textContent = SRC_META[g.s].label;
-
     meta.appendChild(nameEl);
-    meta.appendChild(tag);
+    if (SRC_META[g.s].label) {
+      const tag = document.createElement("span");
+      tag.className = "lg-games-tag";
+      tag.textContent = SRC_META[g.s].label;
+      meta.appendChild(tag);
+    }
     card.appendChild(cover);
     card.appendChild(meta);
     card.addEventListener("click", () => openGame(g));
     return card;
   }
 
+  const pthumbEl = playerEl.querySelector("[data-pthumb]");
+  const fullscreenBtn = playerEl.querySelector("[data-fullscreen]");
+
   function openGame(g) {
     currentEntry = g;
     playerEl.querySelector("[data-pname]").textContent = g.n;
     playerEl.querySelector("[data-psrc]").textContent =
-      g.s === "builtin"
-        ? "Built into the widget"
-        : `${SRC_META[g.s].label}${g.i !== undefined ? " · #" + g.i : ""}`;
+      g.s === "builtin" ? "Built into the widget" : (g.i !== undefined ? "#" + g.i : "");
     playerEl.querySelector("[data-external]").style.visibility =
       g.s === "builtin" ? "hidden" : "";
+    fullscreenBtn.style.visibility = g.s === "builtin" ? "hidden" : "";
+
+    pthumbEl.innerHTML = "";
+    const thumb = thumbUrl(g);
+    if (thumb) {
+      const img = new Image();
+      img.loading = "lazy";
+      img.alt = "";
+      img.src = thumb;
+      pthumbEl.appendChild(img);
+    } else {
+      pthumbEl.textContent = g.s === "builtin" ? "⊕" : initials(g.n);
+    }
+
     listEl.style.display = "none";
     playerEl.style.display = "flex";
 
@@ -284,12 +259,11 @@ export function buildGames(root, vw, vh, onRemove) {
     nf.className = "lg-games-frame";
     nf.allow = "autoplay; fullscreen; gamepad; pointer-lock; accelerometer; gyroscope";
     frameWrap.appendChild(nf);
-    if (g.s === "gn") launchGnMath(g, nf);
-    else if (g.s === "vp") launchVapor(g, nf);
-    else launchTruffled(g, nf);
+    launchGnMath(g, nf);
   }
 
   playerEl.querySelector("[data-back]").addEventListener("click", () => {
+    if (document.fullscreenElement === frameWrap) document.exitFullscreen();
     frameWrap.innerHTML = ""; // destroys the iframe → stops the running game
     currentEntry = null;
     playerEl.style.display = "none";
@@ -300,6 +274,21 @@ export function buildGames(root, vw, vh, onRemove) {
   playerEl.querySelector("[data-external]").addEventListener("click", () => {
     const url = currentEntry && sourcePageUrl(currentEntry);
     if (url) window.open(url, "_blank", "noopener");
+  });
+
+  fullscreenBtn.addEventListener("click", () => {
+    if (document.fullscreenElement === frameWrap) {
+      document.exitFullscreen();
+    } else {
+      frameWrap.requestFullscreen?.();
+    }
+  });
+
+  document.addEventListener("fullscreenchange", () => {
+    const isFull = document.fullscreenElement === frameWrap;
+    fullscreenBtn.innerHTML = isFull ? ICONS.minimize : ICONS.maximize;
+    fullscreenBtn.title = isFull ? "Exit full screen" : "Full screen";
+    frameWrap.classList.toggle("lg-games-frame-wrap-full", isFull);
   });
 
   searchInput.addEventListener("input", () => renderList());

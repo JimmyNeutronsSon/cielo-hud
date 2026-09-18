@@ -338,12 +338,9 @@ export function buildMusic(root, vw, vh, onRemove) {
   async function load(method, arg, heading, pending) {
     const token = ++loadToken;
     setMessage(pending);
-    const skipped = [];
     let tracks;
     try {
-      tracks = await loadTracks(method, arg, (backend, why) => {
-        skipped.push(`${backend} (${why})`);
-      });
+      tracks = await loadTracks(method, arg);
     } catch (err) {
       if (token !== loadToken) return;
       setMessage(`Couldn't load music: ${err.message}`, true);
@@ -352,12 +349,8 @@ export function buildMusic(root, vw, vh, onRemove) {
     if (token !== loadToken) return;
     queue = tracks;
     index = -1;
-    const source = sourceLabel(tracks.length ? tracks[0].source : "");
-    renderResults(
-      queue,
-      heading ? `${heading} · ${source}` : source,
-      skipped.length ? `Unavailable: ${skipped.join(", ")} — showing ${source}.` : ""
-    );
+    const source = sourceLabel();
+    renderResults(queue, heading ? `${heading} · ${source}` : source, "");
   }
 
   const showTrending = () => load("trending", undefined, "Trending", "Loading trending…");

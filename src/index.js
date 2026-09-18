@@ -96,11 +96,22 @@ export function liquidGlassHUD() {
     }
   };
 
+  // Hide/show the whole HUD with the ` key, without tearing it down, so
+  // typing in a page input doesn't accidentally toggle it.
+  const isTypingTarget = (el) =>
+    el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
+  const onKeyDown = (e) => {
+    if (e.key !== "`" || isTypingTarget(e.target)) return;
+    host.style.display = (host.style.display === "none") ? "block" : "none";
+  };
+  document.addEventListener("keydown", onKeyDown);
+
   dock = buildDock(root, togglePanel, () => {
     // Let any open widgets tear down their own resources (e.g. an active mic
     // stream in a voice call) before the HUD is removed from the page.
     root.dispatchEvent(new CustomEvent("lg:hud-close"));
-    root.remove();
+    document.removeEventListener("keydown", onKeyDown);
+    host.remove();
   });
 
   // No panels open by default — the user picks them from the dock.

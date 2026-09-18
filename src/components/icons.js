@@ -26,5 +26,7 @@ export const ICONS = {
   musicPause: icon('<rect x="7" y="5" width="3.5" height="14" rx="1" fill="currentColor" stroke="none"></rect><rect x="13.5" y="5" width="3.5" height="14" rx="1" fill="currentColor" stroke="none"></rect>'),
   musicPrev: icon('<path d="M18 6v12l-8.5-6z" fill="currentColor" stroke="none"></path><rect x="5.5" y="6" width="2.5" height="12" rx="1" fill="currentColor" stroke="none"></rect>'),
   musicNext: icon('<path d="M6 6v12l8.5-6z" fill="currentColor" stroke="none"></path><rect x="16" y="6" width="2.5" height="12" rx="1" fill="currentColor" stroke="none"></rect>'),
-  musicVolume: icon('<path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"></path><path d="M15.5 9.5a3.5 3.5 0 0 1 0 5"></path><path d="M18 7a7 7 0 0 1 0 10"></path>')
+  musicVolume: icon('<path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"></path><path d="M15.5 9.5a3.5 3.5 0 0 1 0 5"></path><path d="M18 7a7 7 0 0 1 0 10"></path>'),
+  maximize: icon('<path d="M8 3H5a2 2 0 0 0-2 2v3"></path><path d="M16 3h3a2 2 0 0 1 2 2v3"></path><path d="M8 21H5a2 2 0 0 1-2-2v-3"></path><path d="M16 21h3a2 2 0 0 0 2-2v-3"></path>'),
+  minimize: icon('<path d="M9 3v3a2 2 0 0 1-2 2H4"></path><path d="M15 3v3a2 2 0 0 0 2 2h3"></path><path d="M9 21v-3a2 2 0 0 0-2-2H4"></path><path d="M15 21v-3a2 2 0 0 1 2-2h3"></path>')
 };
