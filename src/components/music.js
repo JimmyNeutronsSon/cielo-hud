@@ -187,7 +187,31 @@ export function buildMusic(root, vw, vh, onRemove) {
     // the UI but no audio ever starts). Muted autoplay is always allowed, so
     // start muted and unmute the moment real playback begins instead.
     let unmuted = false;
+    let settled = false;
     return new Promise((resolve, reject) => {
+      // Some restricted/broken embeds never reach PLAYING and never fire
+      // onError either — they just sit "buffering" or "unstarted" forever.
+      // Without a timeout those tracks hang the player indefinitely instead
+      // of falling through to the auto-skip-on-failure logic in play().
+      const watchdog = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        reject(new Error("Playback timed out"));
+      }, 10000);
+
+      const settleResolve = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(watchdog);
+        resolve();
+      };
+      const settleReject = (err) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(watchdog);
+        reject(err);
+      };
+
       ytPlayer = new YT.Player(embedEl.querySelector("[data-yt-mount]"), {
         videoId: id,
         playerVars: {
@@ -201,7 +225,6 @@ export function buildMusic(root, vw, vh, onRemove) {
         events: {
           onReady: (e) => {
             e.target.playVideo();
-            resolve();
           },
           onStateChange: (e) => {
             if (e.data === YT.PlayerState.PLAYING) {
@@ -217,6 +240,7 @@ export function buildMusic(root, vw, vh, onRemove) {
                 }, 500);
               }
               updatePlayIcon(true);
+              settleResolve();
             } else if (e.data === YT.PlayerState.PAUSED) updatePlayIcon(false);
             else if (e.data === YT.PlayerState.ENDED) step(1);
           },
@@ -229,7 +253,7 @@ export function buildMusic(root, vw, vh, onRemove) {
               101: "Embedding disabled by the uploader",
               150: "Embedding disabled by the uploader",
             };
-            reject(new Error(messages[e.data] || `YouTube playback unavailable (code ${e.data})`));
+            settleReject(new Error(messages[e.data] || `YouTube playback unavailable (code ${e.data})`));
           },
         },
       });
