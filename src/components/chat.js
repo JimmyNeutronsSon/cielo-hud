@@ -89,7 +89,7 @@ export function buildChat(root, vw, vh, onRemove) {
           <div class="lg-chat-sidebar-section">
             <div class="lg-chat-section-header">DIRECT MESSAGES</div>
             <div class="lg-chat-dm-list" data-dm-list></div>
-            <div class="lg-chat-dm-hint" data-dm-hint>Click anyone's name to start a DM.</div>
+            <div class="lg-chat-dm-hint" data-dm-hint>Work in progress</div>
           </div>
 
           <!-- Voice Channel Section -->
@@ -178,8 +178,8 @@ export function buildChat(root, vw, vh, onRemove) {
             <div class="lg-chat-settings-permalink" style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.08);">
               <div style="font-size:12px;color:${hasPermanentAccount ? '#8bffb0' : '#ffd58a'};">
                 ${hasPermanentAccount
-                  ? `✓ This bookmarklet is saved to your account — it stays <strong>${escapeHtml(myUsername)}</strong> on every site.`
-                  : `This site's copy of Cielo isn't saved — reopening on a different site currently starts a new local identity.`}
+        ? `✓ This bookmarklet is saved to your account — it stays <strong>${escapeHtml(myUsername)}</strong> on every site.`
+        : `This site's copy of Cielo isn't saved — reopening on a different site currently starts a new local identity.`}
               </div>
               <div style="display:flex;gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap;">
                 <a class="lg-chat-settings-save" data-permalink-link href="#" style="text-decoration:none;display:inline-block;">⬇ ${hasPermanentAccount ? 'Update bookmarklet' : 'Drag to bookmarks bar'}</a>
@@ -383,7 +383,7 @@ export function buildChat(root, vw, vh, onRemove) {
           }
         })
       });
-    } catch (e) {}
+    } catch (e) { }
   }
 
   function renderSidebar() {
@@ -433,7 +433,7 @@ export function buildChat(root, vw, vh, onRemove) {
   }
 
   function persistDms() {
-    try { lgStore("_lg_hud_dms", JSON.stringify(openDms)); } catch (e) {}
+    try { lgStore("_lg_hud_dms", JSON.stringify(openDms)); } catch (e) { }
   }
 
   /** Opens (creating if needed) the DM conversation with `name`. */
@@ -570,7 +570,7 @@ export function buildChat(root, vw, vh, onRemove) {
     } else {
       addItem("💬 Message @" + name, () => openDm(name));
       addItem("📋 Copy username", () => {
-        try { navigator.clipboard.writeText(name); } catch (e) {}
+        try { navigator.clipboard.writeText(name); } catch (e) { }
       });
     }
 
@@ -1017,7 +1017,7 @@ export function buildChat(root, vw, vh, onRemove) {
       remoteAudioEls.set(peerId, audio);
     }
     audio.srcObject = stream;
-    audio.play().catch(() => {});
+    audio.play().catch(() => { });
   }
 
   function dropRemoteAudio(peerId) {
