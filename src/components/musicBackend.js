@@ -1,109 +1,64 @@
 // Music source for the Music widget.
 //
-// "jiosaavn" — search/metadata/streaming all come from public unofficial
-// JioSaavn API mirrors (open-source wrappers around jiosaavn.com's own
-// endpoints: https://github.com/sumitkolhe/jiosaavn-api). Songs stream
-// directly from JioSaavn's own CDN (saavncdn.com) via a plain <audio>
-// element — no separate proxying needed, since <audio> playback doesn't
-// require CORS the way reading raw samples with Web Audio API would.
+// "ytmusic" — search/metadata comes from a small self-hosted backend
+// (see scramjet-server-setup.sh's sibling ytmusic-server) wrapping the
+// unofficial `ytmusicapi` Python library (https://ytmusicapi.readthedocs.io),
+// which reads YouTube Music's public search endpoints unauthenticated — no
+// personal Google account or cookies are involved. Playback does NOT use
+// any extracted/decrypted audio stream: the returned video id is handed to
+// YouTube's own IFrame Player API (loaded in music.js), the same
+// officially-embeddable playback every "YouTube in an iframe" site uses.
 
-// Public instances rotate in and out of service, so each call tries them in
-// order and uses the first one that answers rather than pinning one host.
-const JIOSAAVN_HOSTS = [
-  "https://jiosaavn-api-seven-xi.vercel.app",
-  "https://jiosaavn-api3.jj192837465jj.workers.dev",
-  "https://jiosaavn-api.jj192837465jj.workers.dev",
-  "https://jiosaavn-api.fantoo.workers.dev",
-  "https://jiosaavn-api.softyangel8.workers.dev",
-];
+const YTMUSIC_API = "https://api.ritebooks.com/ytmusic";
 
 // ── Shared track shape ──────────────────────────────────────────────────────
 // { id, name, artist, thumb, cover, duration (seconds), source }
 
-function decodeHtmlEntities(str) {
-  if (!str) return "";
-  return str
-    .replace(/&quot;/g, '"')
-    .replace(/&#039;/g, "'")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">");
-}
-
-function bestImage(images) {
-  if (!Array.isArray(images) || !images.length) return "";
-  return images[images.length - 1].url || images[0].url || "";
-}
-
-function bestDownloadUrl(urls) {
-  if (!Array.isArray(urls) || !urls.length) return "";
-  return urls[urls.length - 1].url || urls[0].url || "";
-}
-
-function artistNames(song) {
-  if (song.artists && song.artists.primary && song.artists.primary.length) {
-    return song.artists.primary.map((a) => decodeHtmlEntities(a.name)).join(", ");
-  }
-  return decodeHtmlEntities(song.subtitle || song.primaryArtists || "");
-}
-
-function fromJioSaavnSong(song) {
+function fromYtMusicTrack(t) {
   return {
-    id: song.id,
-    name: decodeHtmlEntities(song.name || song.title || ""),
-    artist: artistNames(song),
-    thumb: bestImage(song.image),
-    cover: bestImage(song.image),
-    duration: Number(song.duration) > 0 ? Number(song.duration) : 0,
-    downloadUrl: song.downloadUrl,
-    source: "jiosaavn",
+    id: t.id,
+    name: t.name || "",
+    artist: t.artist || "",
+    thumb: t.thumb || "",
+    cover: t.thumb || "",
+    duration: Number(t.duration) > 0 ? Number(t.duration) : 0,
+    source: "ytmusic",
   };
 }
 
-// ── JioSaavn backend ─────────────────────────────────────────────────────
-async function jioSaavnFetch(path) {
-  let lastErr = null;
-  for (const host of JIOSAAVN_HOSTS) {
-    try {
-      const res = await fetch(`${host}${path}`, { headers: { Accept: "application/json" } });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
-      if (!json || json.success === false) throw new Error((json && json.message) || "API error");
-      return json;
-    } catch (err) {
-      lastErr = err;
-    }
-  }
-  throw lastErr || new Error("No JioSaavn instance responded");
+async function ytMusicFetch(path) {
+  const res = await fetch(`${YTMUSIC_API}${path}`, { headers: { Accept: "application/json" } });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const json = await res.json();
+  if (json && json.error) throw new Error(json.error);
+  return json;
 }
 
-const JIOSAAVN = {
+const YTMUSIC = {
   async trending() {
-    const json = await jioSaavnFetch("/api/search/songs?query=top%20hits&page=1&limit=20");
-    return (json.data?.results || []).map(fromJioSaavnSong).filter((t) => t.id);
+    const json = await ytMusicFetch("/trending");
+    return (json.results || []).map(fromYtMusicTrack).filter((t) => t.id);
   },
   async search(query) {
-    const json = await jioSaavnFetch(`/api/search/songs?query=${encodeURIComponent(query)}&page=1&limit=20`);
-    return (json.data?.results || []).map(fromJioSaavnSong).filter((t) => t.id);
+    const json = await ytMusicFetch(`/search?q=${encodeURIComponent(query)}`);
+    return (json.results || []).map(fromYtMusicTrack).filter((t) => t.id);
   },
-  // No network call: the highest-quality download URL streams directly.
+  // No network call: the id goes straight to YouTube's own IFrame Player API.
   async resolve(track) {
-    const url = bestDownloadUrl(track.downloadUrl);
-    if (!url) throw new Error("No playable stream available for this track");
-    return { kind: "audio", url };
+    return { kind: "youtube", id: track.id };
   },
 };
 
-const BACKENDS = { jiosaavn: JIOSAAVN };
+const BACKENDS = { ytmusic: YTMUSIC };
 
 export function backendFor(track) {
-  return BACKENDS[track.source] || JIOSAAVN;
+  return BACKENDS[track.source] || YTMUSIC;
 }
 
 export function sourceLabel() {
-  return "JioSaavn";
+  return "YouTube Music";
 }
 
 export async function loadTracks(method, arg) {
-  return JIOSAAVN[method](arg);
+  return YTMUSIC[method](arg);
 }

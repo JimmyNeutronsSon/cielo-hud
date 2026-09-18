@@ -28,7 +28,7 @@ const page = await browser.newPage();
 page.on("console", (msg) => console.log(`[console:${msg.type()}]`, msg.text()));
 page.on("pageerror", (err) => console.log("[pageerror]", err.message));
 page.on("request", (req) => {
-  if (req.url().includes("saavncdn")) console.log("[audio request]", req.url());
+  if (req.url().includes("saavncdn") || req.url().includes("googlevideo") || req.url().includes("ytimg")) console.log("[audio request]", req.url());
 });
 
 await page.goto("http://localhost:5511/");
