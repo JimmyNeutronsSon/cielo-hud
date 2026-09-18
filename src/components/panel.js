@@ -42,6 +42,8 @@ export function createPanel(root, opts, onRemove) {
     <div class="lg-head">
       <span class="lg-dot"></span>
       <span class="lg-title">${opts.title}</span>
+      <button class="lg-x lg-fill-btn" data-fill title="Fill Window">${ICONS.windowed}</button>
+      <button class="lg-x lg-fullscreen-btn" data-fullscreen title="Fullscreen">${ICONS.maximize}</button>
       <button class="lg-x" data-close>${ICONS.close}</button>
     </div>
     <div class="lg-body ${opts.bodyClass || ""}">${opts.body}</div>
@@ -52,5 +54,53 @@ export function createPanel(root, opts, onRemove) {
     p.remove();
     if (onRemove) onRemove(opts.key);
   });
+
+  // ── Fill Window (CSS-only maximize within the page, toggle back to restore) ──
+  const fillBtn = p.querySelector("[data-fill]");
+  let savedRect = null;
+  fillBtn.addEventListener("click", function () {
+    if (p.classList.contains("lg-filled")) {
+      p.classList.remove("lg-filled");
+      if (savedRect) {
+        p.style.left = savedRect.left;
+        p.style.top = savedRect.top;
+        p.style.width = savedRect.width;
+        p.style.height = savedRect.height;
+        p.style.right = savedRect.right;
+        p.style.bottom = savedRect.bottom;
+      }
+      fillBtn.innerHTML = ICONS.windowed;
+      fillBtn.title = "Fill Window";
+    } else {
+      savedRect = {
+        left: p.style.left,
+        top: p.style.top,
+        width: p.style.width,
+        height: p.style.height,
+        right: p.style.right,
+        bottom: p.style.bottom,
+      };
+      p.classList.add("lg-filled");
+      fillBtn.innerHTML = ICONS.minimize;
+      fillBtn.title = "Restore";
+    }
+  });
+
+  // ── Fullscreen (real Fullscreen API) ──────────────────────────────────────
+  const fsBtn = p.querySelector("[data-fullscreen]");
+  fsBtn.addEventListener("click", function () {
+    if (document.fullscreenElement === p) {
+      document.exitFullscreen().catch(() => {});
+    } else if (p.requestFullscreen) {
+      p.requestFullscreen().catch(() => {});
+    }
+  });
+  document.addEventListener("fullscreenchange", function () {
+    const isFs = document.fullscreenElement === p;
+    p.classList.toggle("lg-fullscreen-active", isFs);
+    fsBtn.innerHTML = isFs ? ICONS.minimize : ICONS.maximize;
+    fsBtn.title = isFs ? "Exit Fullscreen" : "Fullscreen";
+  });
+
   return p;
 }

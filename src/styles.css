@@ -242,6 +242,35 @@
   color: #fff;
 }
 
+#lg-hud-root-v1 .lg-head .lg-x svg {
+  width: 13px;
+  height: 13px;
+}
+
+#lg-hud-root-v1 .lg-panel.lg-filled {
+  position: fixed !important;
+  inset: 12px !important;
+  left: 12px !important;
+  top: 12px !important;
+  right: 12px !important;
+  bottom: 12px !important;
+  width: auto !important;
+  height: auto !important;
+  max-width: none !important;
+  max-height: none !important;
+}
+
+#lg-hud-root-v1 .lg-panel:fullscreen,
+#lg-hud-root-v1 .lg-panel.lg-fullscreen-active {
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: none !important;
+  max-height: none !important;
+  border-radius: 0 !important;
+  left: 0 !important;
+  top: 0 !important;
+}
+
 #lg-hud-root-v1 .lg-body {
   padding: 12px;
   font-size: 13px;
