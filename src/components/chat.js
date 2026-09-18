@@ -2,6 +2,9 @@ import { createPanel } from './panel.js';
 import { ICONS } from './icons.js';
 import { lgStore } from './storage.js';
 import { getEmbeddedUsername, buildPersonalBookmarklet } from './identity.js';
+import { createVoiceSession } from './voice.js';
+import { createRealtimeChannel } from './realtime.js';
+import { openVoiceWindow, createVideoStage } from './voiceWindow.js';
 
 const DEFAULT_SUPABASE_URL = "https://mtusdkooiuoocyffsznx.supabase.co";
 const DEFAULT_SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10dXNka29vaXVvb2N5ZmZzem54Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg2MzU4NDEsImV4cCI6MjA5NDIxMTg0MX0.b9zhiqVqykppmthj36LgMr_tbitnht3YkRyT69gkS9E";
@@ -13,6 +16,14 @@ const CHANNELS = [
   { id: "media", name: "media-share", icon: "📸" },
   { id: "ai", name: "ai-lounge", icon: "✨" }
 ];
+
+// A DM is just a channel whose id is derived from both usernames, so the two
+// participants always compute the same id and it needs no extra table. The
+// names are percent-encoded before joining, so a separator character inside a
+// username cannot make two different pairs collide.
+function dmChannelId(a, b) {
+  return "dm:" + [a, b].sort().map(encodeURIComponent).join("|");
+}
 
 function stringToColor(str) {
   const colors = ["#5ee7ff", "#8b7cf6", "#ffb3e6", "#ffd58a", "#8bffb0", "#38bdf8", "#ec4899", "#f59e0b"];
@@ -39,18 +50,25 @@ export function buildChat(root, vw, vh, onRemove) {
   const hasPermanentAccount = !!getEmbeddedUsername();
 
   let activeTarget = { type: "channel", id: "general", name: "general" };
+  // Open DM conversations, by username. Persisted so they survive a reopen.
+  let openDms = [];
+  try {
+    const saved = lgStore("_lg_hud_dms");
+    if (saved) openDms = JSON.parse(saved).filter(n => n && n !== myUsername);
+  } catch (e) { openDms = []; }
+  let onlineUsers = [];
   let liveMessages = [];
   let pendingImage = null;
 
-  // Voice Chat State
+  // Voice chat state. The call itself lives in voice.js (mesh WebRTC over
+  // Supabase Realtime); this panel only owns the UI around it.
+  const VOICE_ROOM = "general";
+  let voice = null;
   let inVoice = false;
-  let isMuted = false;
-  let isCamOn = false;
-  let isScreenSharing = false;
-  let localMediaStream = null;
-  let audioContext = null;
-  let analyser = null;
-  let voiceMembers = ["You"];
+  let voiceMembers = [];
+  let videoWindow = null;   // the popped-out call window, when open
+  let inlineStage = null;   // fallback grid, used when a popup is blocked
+  const remoteAudioEls = new Map(); // peerId -> <audio>, always in this page
 
   const p = createPanel(root, {
     key: "chat",
@@ -66,6 +84,12 @@ export function buildChat(root, vw, vh, onRemove) {
           <div class="lg-chat-sidebar-section">
             <div class="lg-chat-section-header">TEXT CHANNELS</div>
             <div class="lg-chat-channels-list" data-channels-list></div>
+          </div>
+
+          <div class="lg-chat-sidebar-section">
+            <div class="lg-chat-section-header">DIRECT MESSAGES</div>
+            <div class="lg-chat-dm-list" data-dm-list></div>
+            <div class="lg-chat-dm-hint" data-dm-hint>Click anyone's name to start a DM.</div>
           </div>
 
           <!-- Voice Channel Section -->
@@ -102,7 +126,13 @@ export function buildChat(root, vw, vh, onRemove) {
               <span class="lg-chat-header-title" data-header-title>general</span>
             </div>
             <div class="lg-chat-header-actions">
-              <span class="lg-chat-live-pulse" title="Connected to Supabase Realtime">● LIVE</span>
+              <div class="lg-chat-online" data-online-wrap>
+                <button class="lg-chat-online-pill" data-online-pill title="People online">
+                  <span class="lg-online-dot"></span>
+                  <span data-online-count>0</span>
+                </button>
+                <div class="lg-chat-online-pop" data-online-pop></div>
+              </div>
               <button class="lg-chat-header-btn" data-btn="refresh-msgs" title="Refresh Messages">↻</button>
             </div>
           </div>
@@ -120,9 +150,17 @@ export function buildChat(root, vw, vh, onRemove) {
               <button class="lg-vb-btn" data-btn="vc-mute">🎤 Mute</button>
               <button class="lg-vb-btn" data-btn="vc-cam">📷 Cam</button>
               <button class="lg-vb-btn" data-btn="vc-share">🖥 Share</button>
+              <button class="lg-vb-btn" data-btn="vc-window" title="Pop the video grid out into its own window">🗗 Video</button>
               <button class="lg-vb-btn disconnect" data-btn="vc-leave">📞 Leave</button>
             </div>
           </div>
+
+          <!-- Fallback video grid, only used when the pop-out window is blocked -->
+          <div class="lg-chat-inline-stage" data-vc-stage style="display:none;"></div>
+
+          <!-- Remote call audio. Stays in this page (not the video window) so
+               a plain voice call needs no second window at all. -->
+          <div data-vc-audio style="display:none;"></div>
 
           <!-- Settings Drawer -->
           <div class="lg-chat-settings-drawer" data-settings-drawer style="display:none;">
@@ -178,11 +216,19 @@ export function buildChat(root, vw, vh, onRemove) {
           </div>
         </div>
       </div>
+      <div class="lg-chat-user-menu" data-user-menu></div>
     `
   }, onRemove);
 
   // Element handles
   const channelsList = p.querySelector("[data-channels-list]");
+  const dmList = p.querySelector("[data-dm-list]");
+  const dmHint = p.querySelector("[data-dm-hint]");
+  const onlineWrap = p.querySelector("[data-online-wrap]");
+  const onlinePill = p.querySelector("[data-online-pill]");
+  const onlineCountEl = p.querySelector("[data-online-count]");
+  const onlinePop = p.querySelector("[data-online-pop]");
+  const userMenu = p.querySelector("[data-user-menu]");
   const stream = p.querySelector("[data-chat-stream]");
   const input = p.querySelector("[data-chat-input]");
   const fileInput = p.querySelector("[data-file-input]");
@@ -217,8 +263,11 @@ export function buildChat(root, vw, vh, onRemove) {
   const vcMuteBtn = p.querySelector("[data-btn='vc-mute']");
   const vcCamBtn = p.querySelector("[data-btn='vc-cam']");
   const vcShareBtn = p.querySelector("[data-btn='vc-share']");
+  const vcWindowBtn = p.querySelector("[data-btn='vc-window']");
   const vcLeaveBtn = p.querySelector("[data-btn='vc-leave']");
   const vcMicStatus = p.querySelector("[data-vb-mic-status]");
+  const vcStageEl = p.querySelector("[data-vc-stage]");
+  const vcAudioEl = p.querySelector("[data-vc-audio]");
 
   function escapeHtml(str) {
     if (!str) return "";
@@ -345,24 +394,224 @@ export function buildChat(root, vw, vh, onRemove) {
       btn.className = `lg-chat-item ${activeTarget.type === 'channel' && activeTarget.id === ch.id ? 'active' : ''}`;
       btn.innerHTML = `<span class="lg-chat-item-icon">${ch.icon}</span><span class="lg-chat-item-name">${ch.name}</span>`;
       btn.addEventListener("click", () => {
-        switchTarget("channel", ch.id, ch.name, ch.icon);
+        switchTarget("channel", ch.id, ch.name);
       });
       channelsList.appendChild(btn);
     });
+
+    // Direct messages
+    dmList.innerHTML = "";
+    openDms.forEach(name => {
+      const id = dmChannelId(myUsername, name);
+      const row = document.createElement("div");
+      row.className = `lg-chat-item lg-chat-dm-item ${activeTarget.type === 'dm' && activeTarget.id === id ? 'active' : ''}`;
+
+      const open = document.createElement("button");
+      open.className = "lg-chat-dm-open";
+      open.innerHTML = `
+        <span class="lg-chat-dm-avatar" style="background:${stringToColor(name)};">${escapeHtml(name.charAt(0).toUpperCase())}</span>
+        <span class="lg-chat-item-name">${escapeHtml(name)}</span>
+        <span class="lg-chat-dm-presence ${isOnline(name) ? 'online' : ''}"></span>
+      `;
+      open.addEventListener("click", () => openDm(name));
+
+      const close = document.createElement("button");
+      close.className = "lg-chat-dm-close";
+      close.title = `Close DM with ${name}`;
+      close.textContent = "×";
+      close.addEventListener("click", (e) => {
+        e.stopPropagation();
+        closeDm(name);
+      });
+
+      row.appendChild(open);
+      row.appendChild(close);
+      dmList.appendChild(row);
+    });
+
+    dmHint.style.display = openDms.length ? "none" : "block";
+  }
+
+  function persistDms() {
+    try { lgStore("_lg_hud_dms", JSON.stringify(openDms)); } catch (e) {}
+  }
+
+  /** Opens (creating if needed) the DM conversation with `name`. */
+  function openDm(name) {
+    if (!name || name === myUsername) return;
+    if (openDms.indexOf(name) === -1) {
+      openDms.unshift(name);
+      persistDms();
+    }
+    switchTarget("dm", dmChannelId(myUsername, name), name);
+  }
+
+  function closeDm(name) {
+    openDms = openDms.filter(n => n !== name);
+    persistDms();
+    // Closing the conversation you are reading would leave the stream showing
+    // messages with no selected target, so fall back to #general.
+    if (activeTarget.type === "dm" && activeTarget.id === dmChannelId(myUsername, name)) {
+      switchTarget("channel", "general", "general");
+    } else {
+      renderSidebar();
+    }
   }
 
   function switchTarget(type, id, name) {
     activeTarget = { type, id, name };
-    headerIcon.textContent = "#";
+    const isDm = type === "dm";
+    headerIcon.textContent = isDm ? "@" : "#";
     headerTitle.textContent = name;
-    input.placeholder = `Message #${name}...`;
+    input.placeholder = isDm ? `Message @${name}...` : `Message #${name}...`;
+    // Drop the previous conversation's messages so they can't flash in the
+    // new one during the fetch.
+    liveMessages = [];
     renderSidebar();
     fetchMessages();
   }
 
+  // -- Who is online, and the click-a-user menu -----------------------------
+
+  function isOnline(name) {
+    return onlineUsers.indexOf(name) !== -1;
+  }
+
+  /**
+   * Presence rides the same Realtime websocket the voice chat uses, rather
+   * than the chat_users "last_seen" column polled on a timer: joining and
+   * leaving show up immediately, and someone who closes the tab disappears on
+   * the spot instead of lingering until a timeout expires.
+   */
+  const presenceChannel = createRealtimeChannel({
+    supabaseUrl,
+    supabaseKey,
+    topic: "chat:online",
+    presenceKey: myUsername,
+    onPresence: (list) => {
+      onlineUsers = list
+        .map(u => u.username)
+        .filter(Boolean)
+        .sort((a, b) => a.localeCompare(b));
+      renderOnline();
+      renderSidebar();
+    }
+  });
+  presenceChannel.track({ username: myUsername });
+
+  function renderOnline() {
+    onlineCountEl.textContent = String(onlineUsers.length);
+    onlinePill.title = onlineUsers.length === 1
+      ? "1 person online"
+      : onlineUsers.length + " people online";
+
+    onlinePop.innerHTML = "";
+    const title = document.createElement("div");
+    title.className = "lg-chat-online-pop-title";
+    title.textContent = onlineUsers.length ? "ONLINE — " + onlineUsers.length : "NOBODY ONLINE";
+    onlinePop.appendChild(title);
+
+    onlineUsers.forEach(name => {
+      const row = document.createElement("button");
+      row.className = "lg-chat-online-row";
+      row.innerHTML = `
+        <span class="lg-chat-dm-avatar" style="background:${stringToColor(name)};">${escapeHtml(name.charAt(0).toUpperCase())}</span>
+        <span class="lg-chat-online-name">${escapeHtml(name)}</span>
+        ${name === myUsername ? '<span class="lg-chat-online-you">you</span>' : ''}
+      `;
+      row.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openUserMenu(name, e.clientX, e.clientY);
+      });
+      onlinePop.appendChild(row);
+    });
+  }
+
+  let onlinePopPinned = false;
+  onlineWrap.addEventListener("mouseenter", () => onlinePop.classList.add("visible"));
+  onlineWrap.addEventListener("mouseleave", () => {
+    if (!onlinePopPinned) onlinePop.classList.remove("visible");
+  });
+  // Hovering does nothing on a touchscreen, so the pill also pins the list.
+  onlinePill.addEventListener("click", (e) => {
+    e.stopPropagation();
+    onlinePopPinned = !onlinePopPinned;
+    onlinePop.classList.toggle("visible", onlinePopPinned);
+  });
+
+  /** The "what do you want to do with this person" menu. */
+  function openUserMenu(name, x, y) {
+    if (!name) return;
+    userMenu.innerHTML = "";
+
+    const head = document.createElement("div");
+    head.className = "lg-chat-user-menu-head";
+    head.innerHTML = `
+      <span class="lg-chat-dm-avatar" style="background:${stringToColor(name)};">${escapeHtml(name.charAt(0).toUpperCase())}</span>
+      <span class="lg-chat-user-menu-name">${escapeHtml(name)}</span>
+      <span class="lg-chat-dm-presence ${isOnline(name) ? 'online' : ''}"></span>
+    `;
+    userMenu.appendChild(head);
+
+    const addItem = (label, onClick, disabled) => {
+      const b = document.createElement("button");
+      b.className = "lg-chat-user-menu-item";
+      b.textContent = label;
+      if (disabled) {
+        b.disabled = true;
+      } else {
+        b.addEventListener("click", () => { closeUserMenu(); onClick(); });
+      }
+      userMenu.appendChild(b);
+    };
+
+    if (name === myUsername) {
+      addItem("That's you", null, true);
+    } else {
+      addItem("💬 Message @" + name, () => openDm(name));
+      addItem("📋 Copy username", () => {
+        try { navigator.clipboard.writeText(name); } catch (e) {}
+      });
+    }
+
+    // Positioned in viewport coordinates, then nudged back inside if it would
+    // overhang the right or bottom edge.
+    userMenu.classList.add("visible");
+    const rect = userMenu.getBoundingClientRect();
+    userMenu.style.left = Math.max(8, Math.min(x, window.innerWidth - rect.width - 8)) + "px";
+    userMenu.style.top = Math.max(8, Math.min(y, window.innerHeight - rect.height - 8)) + "px";
+  }
+
+  function closeUserMenu() {
+    userMenu.classList.remove("visible");
+  }
+
+  /** Opens the menu for whoever authored the message that was clicked. */
+  function onAuthorClick(e, name) {
+    e.stopPropagation();
+    openUserMenu(name, e.clientX, e.clientY);
+  }
+
+  // Any click outside the menu (or the online list) dismisses them. Capture
+  // phase, and composedPath() so it still works from inside the shadow root.
+  const onDocClick = (e) => {
+    const path = e.composedPath ? e.composedPath() : [];
+    if (path.indexOf(userMenu) === -1) closeUserMenu();
+    if (path.indexOf(onlineWrap) === -1) {
+      onlinePopPinned = false;
+      onlinePop.classList.remove("visible");
+    }
+  };
+  document.addEventListener("click", onDocClick, true);
+
+  /** Channels and DMs are both just conversations backed by chat_messages. */
+  function isConversation() {
+    return activeTarget.type === "channel" || activeTarget.type === "dm";
+  }
+
   async function fetchMessages() {
     try {
-      if (activeTarget.type === "channel") {
+      if (isConversation()) {
         const endpoint = `${supabaseUrl.replace(/\/+$/, '')}/rest/v1/chat_messages?order=id.desc&limit=70`;
         const res = await fetch(endpoint, {
           headers: {
@@ -432,10 +681,10 @@ export function buildChat(root, vw, vh, onRemove) {
       `).join("");
 
       row.innerHTML = `
-        <div class="lg-chat-msg-avatar" style="background:${msg.isBot ? '#ec4899' : avatarColor};">${avatarLetter}</div>
+        <div class="lg-chat-msg-avatar lg-clickable-user" style="background:${msg.isBot ? '#ec4899' : avatarColor};">${avatarLetter}</div>
         <div class="lg-chat-msg-content">
           <div class="lg-chat-msg-meta">
-            <span class="lg-chat-msg-author">${escapeHtml(msg.author)}</span>
+            <span class="lg-chat-msg-author lg-clickable-user">${escapeHtml(msg.author)}</span>
             ${msg.isBot ? '<span class="lg-chat-bot-tag">AI</span>' : ''}
             <span class="lg-chat-msg-time">${escapeHtml(msg.time)}</span>
           </div>
@@ -446,6 +695,13 @@ export function buildChat(root, vw, vh, onRemove) {
           </div>
         </div>
       `;
+
+      // Clicking whoever sent a message is the way into a DM with them.
+      if (!msg.isBot && msg.author !== myUsername) {
+        row.querySelectorAll(".lg-clickable-user").forEach(elm => {
+          elm.addEventListener("click", (e) => onAuthorClick(e, msg.author));
+        });
+      }
 
       const addRxnBtn = row.querySelector(".lg-chat-rxn-add");
       if (addRxnBtn) {
@@ -480,7 +736,7 @@ export function buildChat(root, vw, vh, onRemove) {
     };
 
     try {
-      if (activeTarget.type === "channel" && typeof msgId === "number") {
+      if (isConversation() && typeof msgId === "number") {
         const res = await fetch(`${base}/rest/v1/chat_messages?id=eq.${msgId}`, { headers });
         if (res.ok) {
           const rows = await res.json();
@@ -524,7 +780,7 @@ export function buildChat(root, vw, vh, onRemove) {
     liveMessages.push(optimisticMsg);
     renderMessages();
 
-    if (activeTarget.type === "channel") {
+    if (isConversation()) {
       const payload = {
         data: {
           id: `${timestamp}-${Math.random().toString(36).substring(2, 8)}`,
@@ -629,80 +885,294 @@ export function buildChat(root, vw, vh, onRemove) {
 
   removePreviewBtn.addEventListener("click", clearPendingImage);
 
-  // Voice Chat (VC) Logic
+  // ── Voice Chat ────────────────────────────────────────────────────────────
+  // Real mesh WebRTC (see voice.js). Audio plays here in the page; video tiles
+  // are rendered in a separate pop-out window, falling back to an inline grid
+  // only if the browser blocks the popup.
+
+  function tileId(peerId, kind) {
+    return peerId + ":" + kind;
+  }
+
+  /** The stage currently showing video, if any. */
+  function activeStage() {
+    if (videoWindow && videoWindow.isOpen) return videoWindow.stage;
+    return inlineStage;
+  }
+
+  function stageState() {
+    return {
+      muted: voice ? voice.isMuted : false,
+      cam: voice ? voice.isCamOn : false,
+      share: voice ? voice.isSharing : false,
+      status: voiceStatusText()
+    };
+  }
+
+  function voiceStatusText() {
+    if (!inVoice) return "Disconnected";
+    const others = voiceMembers.filter(m => !m.me).length;
+    return others === 0
+      ? "Voice connected · waiting for others"
+      : `Voice connected · ${others + 1} in call`;
+  }
+
+  function syncStageState() {
+    const stage = activeStage();
+    if (stage) stage.setState(stageState());
+  }
+
+  const stageActions = {
+    onMute: () => toggleMute(),
+    onCam: () => toggleCamera(),
+    onShare: () => toggleScreenShare(),
+    onLeave: () => leaveVoice()
+  };
+
+  /** Opens (or focuses) the pop-out call window; inline grid if blocked. */
+  function openVideoStage(focusIt) {
+    if (videoWindow && videoWindow.isOpen) {
+      if (focusIt) videoWindow.focus();
+      syncStageState();
+      return activeStage();
+    }
+
+    videoWindow = openVoiceWindow({
+      title: "Cielo Voice — " + VOICE_ROOM,
+      actions: stageActions,
+      onClosed: () => {
+        // Closing the window drops video but keeps the call: cheapest state.
+        videoWindow = null;
+        if (inVoice && voice) {
+          if (voice.isCamOn) voice.setCamera(false);
+          if (voice.isSharing) voice.setScreenShare(false);
+        }
+        updateVoiceButtons();
+      }
+    });
+
+    if (!videoWindow) {
+      if (!inlineStage) {
+        vcStageEl.style.display = "block";
+        inlineStage = createVideoStage(document, vcStageEl, stageActions);
+      }
+    } else if (inlineStage) {
+      closeInlineStage();
+    }
+
+    const stage = activeStage();
+    if (stage) {
+      // Re-attach every stream we already have to the (possibly new) stage.
+      restoreTiles(stage);
+      stage.setState(stageState());
+    }
+    updateVoiceButtons();
+    return stage;
+  }
+
+  function closeInlineStage() {
+    if (!inlineStage) return;
+    inlineStage.destroy();
+    inlineStage = null;
+    vcStageEl.style.display = "none";
+  }
+
+  function closeVideoStage() {
+    if (videoWindow) {
+      videoWindow.close();
+      videoWindow = null;
+    }
+    closeInlineStage();
+    liveTiles.clear();
+    updateVoiceButtons();
+  }
+
+  // Every stream currently on screen, so the stage can be rebuilt after the
+  // window is reopened (or after falling back to the inline grid).
+  const liveTiles = new Map(); // tileId -> { label, stream, opts }
+
+  function showTile(id, label, stream, opts) {
+    liveTiles.set(id, { label, stream, opts });
+    const stage = activeStage() || openVideoStage(false);
+    if (stage) stage.addTile(id, label, stream, opts);
+  }
+
+  function hideTile(id) {
+    liveTiles.delete(id);
+    const stage = activeStage();
+    if (stage) stage.removeTile(id);
+  }
+
+  function restoreTiles(stage) {
+    liveTiles.forEach((t, id) => stage.addTile(id, t.label, t.stream, t.opts));
+  }
+
+  function attachRemoteAudio(peerId, stream) {
+    let audio = remoteAudioEls.get(peerId);
+    if (!audio) {
+      audio = document.createElement("audio");
+      audio.autoplay = true;
+      audio.playsInline = true;
+      vcAudioEl.appendChild(audio);
+      remoteAudioEls.set(peerId, audio);
+    }
+    audio.srcObject = stream;
+    audio.play().catch(() => {});
+  }
+
+  function dropRemoteAudio(peerId) {
+    const audio = remoteAudioEls.get(peerId);
+    if (!audio) return;
+    audio.srcObject = null;
+    audio.remove();
+    remoteAudioEls.delete(peerId);
+  }
+
+  function renderVoiceMembers() {
+    const list = voiceMembers.length ? voiceMembers : [{ peerId: "me", username: myUsername, me: true }];
+    vcMembersEl.innerHTML = "";
+    list.forEach(m => {
+      const chip = document.createElement("div");
+      chip.className = "lg-vc-chip" + (m.me ? " me" : "");
+      chip.dataset.peer = m.peerId;
+      chip.innerHTML = `
+        <span class="lg-vc-dot"></span>
+        <span class="lg-vc-name">${escapeHtml(m.username)}${m.me ? " (you)" : ""}</span>
+      `;
+      vcMembersEl.appendChild(chip);
+    });
+  }
+
+  function updateVoiceButtons() {
+    if (!voice) return;
+    vcMuteBtn.textContent = voice.isMuted ? "🔇 Unmute" : "🎤 Mute";
+    vcMuteBtn.classList.toggle("muted", voice.isMuted);
+
+    vcCamBtn.textContent = voice.isCamOn ? "📷 Cam (On)" : "📷 Cam";
+    vcCamBtn.classList.toggle("active", voice.isCamOn);
+
+    vcShareBtn.textContent = voice.isSharing ? "🖥 Sharing" : "🖥 Share";
+    vcShareBtn.classList.toggle("active", voice.isSharing);
+
+    const stageOpen = !!activeStage();
+    vcWindowBtn.textContent = stageOpen ? "🗗 Video ✓" : "🗗 Video";
+    vcWindowBtn.classList.toggle("active", stageOpen);
+
+    vcMicStatus.textContent = voice.isMuted ? "Microphone muted" : voiceStatusText();
+    syncStageState();
+  }
+
+  function ensureVoiceSession() {
+    if (voice) return voice;
+    voice = createVoiceSession({
+      supabaseUrl,
+      supabaseKey,
+      room: VOICE_ROOM,
+      username: myUsername,
+      handlers: {
+        members: (members) => {
+          voiceMembers = members;
+          renderVoiceMembers();
+          if (inVoice) updateVoiceButtons();
+        },
+        speaking: (peerId, speaking) => {
+          const chip = vcMembersEl.querySelector(`.lg-vc-chip[data-peer="${peerId}"]`);
+          if (chip) chip.classList.toggle("speaking", speaking);
+        },
+        remoteAudio: (peerId, name, stream) => attachRemoteAudio(peerId, stream),
+        remoteVideo: (peerId, name, kind, stream) => {
+          showTile(tileId(peerId, kind), (kind === "screen" ? "🖥 " : "") + name, stream, { screen: kind === "screen" });
+        },
+        remoteVideoEnded: (peerId, kind) => hideTile(tileId(peerId, kind)),
+        peerGone: (peerId) => {
+          dropRemoteAudio(peerId);
+          hideTile(tileId(peerId, "cam"));
+          hideTile(tileId(peerId, "screen"));
+        },
+        localVideo: (kind, stream) => {
+          showTile(tileId("local", kind), (kind === "screen" ? "🖥 " : "") + myUsername + " (you)", stream, {
+            screen: kind === "screen",
+            mirror: kind === "cam"
+          });
+        },
+        localVideoEnded: (kind) => hideTile(tileId("local", kind)),
+        screenShareEnded: () => updateVoiceButtons()
+      }
+    });
+    return voice;
+  }
+
   async function joinVoice() {
     try {
-      localMediaStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-      inVoice = true;
-
-      // Audio speaking visualizer
-      try {
-        const AudioCtx = window.AudioContext || window.webkitAudioContext;
-        audioContext = new AudioCtx();
-        const src = audioContext.createMediaStreamSource(localMediaStream);
-        analyser = audioContext.createAnalyser();
-        analyser.fftSize = 256;
-        src.connect(analyser);
-
-        const dataArr = new Uint8Array(analyser.frequencyBinCount);
-        const checkSpeaking = () => {
-          if (!inVoice) return;
-          analyser.getByteFrequencyData(dataArr);
-          let sum = 0;
-          for (let i = 0; i < dataArr.length; i++) sum += dataArr[i];
-          const avg = sum / dataArr.length;
-          const chip = vcMembersEl.querySelector(".lg-vc-chip.me");
-          if (chip) {
-            if (avg > 15 && !isMuted) {
-              chip.classList.add("speaking");
-            } else {
-              chip.classList.remove("speaking");
-            }
-          }
-          requestAnimationFrame(checkSpeaking);
-        };
-        checkSpeaking();
-      } catch (e) {}
-
-      voiceBar.style.display = "flex";
-      toggleVcBtn.classList.add("in-voice");
-      vcBadge.textContent = "Connected";
-      vcBadge.className = "lg-vc-badge active";
-      vcMembersEl.style.display = "flex";
-      renderVoiceMembers();
+      await ensureVoiceSession().join();
     } catch (err) {
       alert("Microphone access is required to join Voice Chat. Please allow microphone permissions in your browser.");
+      return;
     }
+
+    inVoice = true;
+    voiceBar.style.display = "flex";
+    toggleVcBtn.classList.add("in-voice");
+    vcBadge.textContent = "Connected";
+    vcBadge.className = "lg-vc-badge active";
+    vcMembersEl.style.display = "flex";
+    renderVoiceMembers();
+    updateVoiceButtons();
   }
 
   function leaveVoice() {
+    if (!inVoice) return;
     inVoice = false;
-    if (localMediaStream) {
-      localMediaStream.getTracks().forEach(t => t.stop());
-      localMediaStream = null;
-    }
-    if (audioContext) {
-      audioContext.close();
-      audioContext = null;
-    }
+    if (voice) voice.leave();
+
+    closeVideoStage();
+    remoteAudioEls.forEach((_, peerId) => dropRemoteAudio(peerId));
+    voiceMembers = [];
+
     voiceBar.style.display = "none";
     toggleVcBtn.classList.remove("in-voice");
     vcBadge.textContent = "Join";
     vcBadge.className = "lg-vc-badge";
     vcMembersEl.style.display = "none";
+    vcMembersEl.innerHTML = "";
+    vcMuteBtn.textContent = "🎤 Mute";
+    vcMuteBtn.classList.remove("muted");
+    vcCamBtn.textContent = "📷 Cam";
+    vcCamBtn.classList.remove("active");
+    vcShareBtn.textContent = "🖥 Share";
+    vcShareBtn.classList.remove("active");
+    vcWindowBtn.classList.remove("active");
   }
 
-  function renderVoiceMembers() {
-    vcMembersEl.innerHTML = "";
-    voiceMembers.forEach(name => {
-      const chip = document.createElement("div");
-      chip.className = `lg-vc-chip ${name === 'You' ? 'me' : ''}`;
-      chip.innerHTML = `
-        <span class="lg-vc-dot"></span>
-        <span class="lg-vc-name">${name === 'You' ? escapeHtml(myUsername) : escapeHtml(name)}</span>
-      `;
-      vcMembersEl.appendChild(chip);
-    });
+  function toggleMute() {
+    if (!inVoice || !voice) return;
+    voice.setMuted(!voice.isMuted);
+    updateVoiceButtons();
+  }
+
+  async function toggleCamera() {
+    if (!inVoice || !voice) return;
+    const turningOn = !voice.isCamOn;
+    // Open the stage first so the local preview has somewhere to land.
+    if (turningOn) openVideoStage(true);
+    try {
+      await voice.setCamera(turningOn);
+    } catch (e) {
+      alert("Camera access denied.");
+    }
+    updateVoiceButtons();
+  }
+
+  async function toggleScreenShare() {
+    if (!inVoice || !voice) return;
+    const turningOn = !voice.isSharing;
+    if (turningOn) openVideoStage(true);
+    try {
+      await voice.setScreenShare(turningOn);
+    } catch (e) {
+      // User dismissed the picker — nothing to report.
+    }
+    updateVoiceButtons();
   }
 
   toggleVcBtn.addEventListener("click", () => {
@@ -714,38 +1184,21 @@ export function buildChat(root, vw, vh, onRemove) {
   });
 
   vcLeaveBtn.addEventListener("click", leaveVoice);
+  vcMuteBtn.addEventListener("click", toggleMute);
+  vcCamBtn.addEventListener("click", toggleCamera);
+  vcShareBtn.addEventListener("click", toggleScreenShare);
 
-  vcMuteBtn.addEventListener("click", () => {
-    if (!localMediaStream) return;
-    isMuted = !isMuted;
-    localMediaStream.getAudioTracks().forEach(t => t.enabled = !isMuted);
-    vcMuteBtn.textContent = isMuted ? "🔇 Unmute" : "🎤 Mute";
-    vcMuteBtn.classList.toggle("muted", isMuted);
-    vcMicStatus.textContent = isMuted ? "Microphone Muted" : "RTC Active · Low Latency";
-  });
-
-  vcCamBtn.addEventListener("click", async () => {
+  vcWindowBtn.addEventListener("click", () => {
     if (!inVoice) return;
-    isCamOn = !isCamOn;
-    vcCamBtn.textContent = isCamOn ? "📷 Cam (On)" : "📷 Cam";
-    vcCamBtn.classList.toggle("active", isCamOn);
-  });
-
-  vcShareBtn.addEventListener("click", async () => {
-    if (!inVoice) return;
-    try {
-      if (!isScreenSharing) {
-        const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-        isScreenSharing = true;
-        vcShareBtn.textContent = "🖥 Sharing";
-        vcShareBtn.classList.add("active");
-        screenStream.getVideoTracks()[0].onended = () => {
-          isScreenSharing = false;
-          vcShareBtn.textContent = "🖥 Share";
-          vcShareBtn.classList.remove("active");
-        };
-      }
-    } catch (e) {}
+    if (activeStage()) {
+      closeVideoStage();
+      // Nothing left to render video into, so stop producing it.
+      if (voice.isCamOn) voice.setCamera(false);
+      if (voice.isSharing) voice.setScreenShare(false);
+      updateVoiceButtons();
+    } else {
+      openVideoStage(true);
+    }
   });
 
   quickEmojiBtn.addEventListener("click", () => {
@@ -797,6 +1250,15 @@ export function buildChat(root, vw, vh, onRemove) {
       saveSettingsBtn.textContent = "Save & Sync";
     }
 
+    // The voice session captured the old name when it was built; drop it so
+    // the next join announces the new one. (Mid-call renames keep the name
+    // everyone already sees, rather than reconnecting the call underneath them.)
+    if (renamed && voice && !inVoice) {
+      voice.destroy();
+      voice = null;
+    }
+    if (renamed) presenceChannel.track({ username: myUsername });
+
     refreshPermalink();
     registerUser();
     fetchMessages();
@@ -806,21 +1268,45 @@ export function buildChat(root, vw, vh, onRemove) {
   registerUser();
   fetchMessages();
 
+  // Skip polling while the tab is backgrounded — nobody's watching, so there's
+  // no point hammering Supabase every 1.5s. Catches up immediately on return.
+  let wasHidden = document.hidden;
   const pollInterval = setInterval(() => {
-    if (p.isConnected) {
-      fetchMessages();
-    } else {
+    if (!p.isConnected) {
       clearInterval(pollInterval);
+      return;
     }
+    if (document.hidden) {
+      wasHidden = true;
+      return;
+    }
+    if (wasHidden) wasHidden = false;
+    fetchMessages();
   }, 1500);
 
-  // Hang up the mic (and any screen share) if the whole HUD is closed while
-  // still in a voice call, instead of leaving it running in the background.
-  root.addEventListener("lg:hud-close", () => {
+  // Hang up the mic (and any screen share, and the signalling socket) if the
+  // HUD is closed, or the chat panel itself is closed, while still in a call
+  // -- otherwise the mic light stays on with nothing on screen to explain it.
+  function teardownVoice() {
     if (inVoice) leaveVoice();
-  });
+    if (voice) {
+      voice.destroy();
+      voice = null;
+    }
+    presenceChannel.close();
+    document.removeEventListener("click", onDocClick, true);
+  }
+  root.addEventListener("lg:hud-close", teardownVoice);
+  p.querySelector("[data-close]").addEventListener("click", teardownVoice);
+
+  const onVisibilityChange = () => {
+    if (!document.hidden && p.isConnected) fetchMessages();
+    if (!p.isConnected) document.removeEventListener("visibilitychange", onVisibilityChange);
+  };
+  document.addEventListener("visibilitychange", onVisibilityChange);
 
   renderSidebar();
+  renderOnline();
 
   return p;
 }

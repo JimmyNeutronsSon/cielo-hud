@@ -9,10 +9,11 @@ captureBootstrapUsername();
 
 import { buildDock } from './components/dock.js';
 import { buildChat } from './components/chat.js';
-import { buildSettings, applySavedTheme } from './components/settings.js';
+import { buildSettings, applySavedTheme, applySavedPanelZoom } from './components/settings.js';
 import { buildBrowser } from './components/browser.js';
 import { buildGames } from './components/games.js';
 import { buildMusic } from './components/music.js';
+import { buildUpdateNotice } from './components/updateNotice.js';
 
 export function liquidGlassHUD() {
   const ROOT_ID = "lg-hud-root-v1";
@@ -39,9 +40,10 @@ export function liquidGlassHUD() {
   root.id = ROOT_ID;
   shadow.appendChild(root);
 
-  // Restore the accent theme picked in Settings before anything renders, so
-  // there's no flash of the default colors.
+  // Restore the accent theme and glass-magnification setting picked in
+  // Settings before anything renders, so there's no flash of the defaults.
   applySavedTheme(root);
+  applySavedPanelZoom(root);
 
   // SVG filter setup for liquid refraction
   const svgNS = "http://www.w3.org/2000/svg";
@@ -115,6 +117,9 @@ export function liquidGlassHUD() {
   });
 
   // No panels open by default — the user picks them from the dock.
+
+  // One-time "heads up" card -- shows once per browser, then never again.
+  buildUpdateNotice(root);
 }
 
 // Auto-run when injected as a bookmarklet

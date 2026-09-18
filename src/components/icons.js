@@ -29,5 +29,6 @@ export const ICONS = {
   musicVolume: icon('<path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"></path><path d="M15.5 9.5a3.5 3.5 0 0 1 0 5"></path><path d="M18 7a7 7 0 0 1 0 10"></path>'),
   maximize: icon('<path d="M8 3H5a2 2 0 0 0-2 2v3"></path><path d="M16 3h3a2 2 0 0 1 2 2v3"></path><path d="M8 21H5a2 2 0 0 1-2-2v-3"></path><path d="M16 21h3a2 2 0 0 0 2-2v-3"></path>'),
   minimize: icon('<path d="M9 3v3a2 2 0 0 1-2 2H4"></path><path d="M15 3v3a2 2 0 0 0 2 2h3"></path><path d="M9 21v-3a2 2 0 0 0-2-2H4"></path><path d="M15 21v-3a2 2 0 0 1 2-2h3"></path>'),
-  windowed: icon('<rect x="4" y="4" width="16" height="16" rx="2"></rect>')
+  windowed: icon('<rect x="4" y="4" width="16" height="16" rx="2"></rect>'),
+  alert: icon('<path d="M12 3.5l9.5 16.5H2.5z"></path><line x1="12" y1="9.5" x2="12" y2="14"></line><circle cx="12" cy="17" r="1" fill="currentColor" stroke="none"></circle>')
 };

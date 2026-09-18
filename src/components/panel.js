@@ -1,5 +1,14 @@
 import { ICONS } from './icons.js';
 
+// Shared across every panel so "bring to front on click" works globally —
+// each click bumps the counter and the clicked panel takes the new top slot.
+let topZ = 10;
+
+export function raisePanel(panel) {
+  topZ += 1;
+  panel.style.zIndex = String(topZ);
+}
+
 export function makeDraggable(panel, handle) {
   let sx, sy, sl, st, dragging = false;
   handle.addEventListener("pointerdown", function (e) {
@@ -49,6 +58,11 @@ export function createPanel(root, opts, onRemove) {
     <div class="lg-body ${opts.bodyClass || ""}">${opts.body}</div>
   `;
   root.appendChild(p);
+  raisePanel(p);
+  // Bring the panel in front of every other one as soon as it's interacted
+  // with — capture phase so it fires even when the click lands on a button
+  // or a child element (e.g. the iframe) inside the panel.
+  p.addEventListener("pointerdown", () => raisePanel(p), true);
   makeDraggable(p, p.querySelector(".lg-head"));
   p.querySelector("[data-close]").addEventListener("click", function () {
     p.remove();

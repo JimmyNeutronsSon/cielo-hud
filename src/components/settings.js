@@ -1,7 +1,47 @@
 import { createPanel } from './panel.js';
 import { icon, ICONS } from './icons.js';
+import { lgStore } from './storage.js';
 
 const THEME_KEY = "cielo.theme";
+const ZOOM_KEY = "cielo.panelZoom";
+const ZOOM_DEFAULT_AMT = 1.06;
+
+function readSavedPanelZoom() {
+  try {
+    const raw = lgStore(ZOOM_KEY);
+    if (!raw) return { on: false, amt: ZOOM_DEFAULT_AMT };
+    const parsed = JSON.parse(raw);
+    return {
+      on: !!parsed.on,
+      amt: typeof parsed.amt === "number" ? parsed.amt : ZOOM_DEFAULT_AMT
+    };
+  } catch {
+    return { on: false, amt: ZOOM_DEFAULT_AMT };
+  }
+}
+
+/**
+ * Real glass magnifies whatever sits behind it, so a panel you're looking at
+ * should read as very slightly larger than one you aren't. This just applies
+ * that as a CSS custom property + class on the root; the actual hover-scale
+ * rule lives in styles.css so it works even before Settings has ever opened
+ * to wire up JS for it.
+ */
+export function applySavedPanelZoom(root) {
+  const { on, amt } = readSavedPanelZoom();
+  root.classList.toggle("lg-panel-zoom-on", on);
+  root.style.setProperty("--lg-panel-zoom-amt", amt);
+}
+
+function savePanelZoom(root, on, amt) {
+  root.classList.toggle("lg-panel-zoom-on", on);
+  root.style.setProperty("--lg-panel-zoom-amt", amt);
+  try {
+    lgStore(ZOOM_KEY, JSON.stringify({ on, amt }));
+  } catch {
+    /* storage blocked on this page — setting just won't persist */
+  }
+}
 
 // Each theme is just the two accent colors every gradient/glow/highlight in
 // styles.css reads through --lg-accent(-rgb)/--lg-accent2(-rgb) — see the
@@ -93,6 +133,9 @@ export function buildSettings(root, vw, vh, dock, onRemove) {
           <div class="lg-row" style="margin-top:12px;"><span>Enable Center Warp</span><div class="lg-toggle" data-lab-warp></div></div>
           <div class="lg-row"><span>Hide All Buttons</span><div class="lg-toggle" data-lab-hide-btns></div></div>
           <div class="lg-row"><span>Glass Zoom on Dock</span><div class="lg-toggle" data-lab-zoom></div></div>
+          <div class="lg-label" style="margin-top:12px;">Panel Magnification <span class="lg-settings-hint">(peek through the glass)</span></div>
+          <input class="lg-slider" type="range" min="1" max="1.15" step="0.01" value="1.06" data-lab-panel-zoom-amt>
+          <div class="lg-row"><span>Magnify Panel on Hover</span><div class="lg-toggle" data-lab-panel-zoom></div></div>
           <div class="lg-btn" data-lab-random style="margin-top:12px;flex-direction:row;justify-content:center;gap:6px;">
             ${icon('<path d="M12 3.5l2.4 5 5.4.6-4 3.8 1 5.4L12 15.8l-4.8 2.5 1-5.4-4-3.8 5.4-.6z"></path>')}Randomize Glass Effects
           </div>
@@ -145,6 +188,8 @@ export function buildSettings(root, vw, vh, dock, onRemove) {
   const warpToggle = panel.querySelector("[data-lab-warp]");
   const hideBtnsToggle = panel.querySelector("[data-lab-hide-btns]");
   const zoomToggle = panel.querySelector("[data-lab-zoom]");
+  const panelZoomAmtIn = panel.querySelector("[data-lab-panel-zoom-amt]");
+  const panelZoomToggle = panel.querySelector("[data-lab-panel-zoom]");
   const randomBtn = panel.querySelector("[data-lab-random]");
 
   function updateRefraction() {
@@ -245,6 +290,20 @@ export function buildSettings(root, vw, vh, dock, onRemove) {
     zoomToggle.classList.toggle("on");
     if (zoomToggle.classList.contains("on")) enableDockZoom();
     else disableDockZoom();
+  });
+
+  // ── Panel Magnification (glass makes what's behind it read slightly bigger) ──
+  const savedPanelZoom = readSavedPanelZoom();
+  panelZoomAmtIn.value = savedPanelZoom.amt;
+  panelZoomToggle.classList.toggle("on", savedPanelZoom.on);
+
+  panelZoomToggle.addEventListener("click", function () {
+    panelZoomToggle.classList.toggle("on");
+    savePanelZoom(root, panelZoomToggle.classList.contains("on"), Number(panelZoomAmtIn.value));
+  });
+
+  panelZoomAmtIn.addEventListener("input", function () {
+    savePanelZoom(root, panelZoomToggle.classList.contains("on"), Number(panelZoomAmtIn.value));
   });
 
   // ── Themes ────────────────────────────────────────────────────────────────

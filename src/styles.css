@@ -39,6 +39,9 @@
   --lg-accent-rgb: 94, 231, 255;
   --lg-accent2: #8b5cf6;
   --lg-accent2-rgb: 139, 92, 246;
+  /* "Looking through glass" panel magnification — off (1 = no scale) until
+     Settings turns it on and sets a real multiplier. */
+  --lg-panel-zoom-amt: 1;
 }
 
 #lg-hud-root-v1 .lg-mono {
@@ -153,6 +156,102 @@
 
 #lg-hud-root-v1 .lg-dock .lg-close {
   color: #ff8585;
+}
+
+/* ── One-time update notice — same glass surface as .lg-panel/.lg-dock ──── */
+#lg-hud-root-v1 .lg-notice {
+  position: absolute;
+  left: 50%;
+  top: 22px;
+  transform: translateX(-50%);
+  z-index: 20;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: min(420px, calc(100vw - 40px));
+  padding: 14px 14px 14px 16px;
+  border-radius: 16px;
+  background: linear-gradient(160deg, rgba(26, 36, 58, var(--lg-panel-alpha, .6)), rgba(7, 10, 20, var(--lg-panel-alpha, .6)));
+  backdrop-filter: blur(var(--lg-blur, 2px)) saturate(180%) contrast(1.05) url(#lg-refraction);
+  -webkit-backdrop-filter: blur(var(--lg-blur, 2px)) saturate(180%) contrast(1.05);
+  border: 1px solid rgba(180, 205, 235, .32);
+  box-shadow:
+    0 14px 46px rgba(0, 0, 0, .6),
+    0 0 0 1px rgba(255, 255, 255, .04) inset,
+    0 1.5px 0 rgba(230, 240, 255, .3) inset,
+    -12px 12px 40px rgba(255, 158, 94, 0.35),
+    12px -12px 45px rgba(var(--lg-accent2-rgb, 139, 92, 246), 0.3);
+  pointer-events: auto;
+  animation: lg-in .22s ease, lg-glow-alive 6s ease-in-out infinite;
+}
+
+#lg-hud-root-v1 .lg-notice.lg-notice-out {
+  animation: none;
+  transition: opacity .18s ease, transform .18s ease;
+  opacity: 0;
+  transform: translateX(-50%) translateY(-6px) scale(.98);
+}
+
+#lg-hud-root-v1 .lg-notice-icon {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffd58a;
+  background: rgba(255, 213, 138, .15);
+  box-shadow: 0 0 12px rgba(255, 213, 138, .35);
+}
+
+#lg-hud-root-v1 .lg-notice-icon svg {
+  width: 17px;
+  height: 17px;
+}
+
+#lg-hud-root-v1 .lg-notice-body {
+  flex: 1;
+  min-width: 0;
+}
+
+#lg-hud-root-v1 .lg-notice-title {
+  font-family: var(--hud-font);
+  font-size: 15px;
+  font-weight: 400;
+  letter-spacing: .03em;
+  color: #ffffff;
+  margin-bottom: 2px;
+}
+
+#lg-hud-root-v1 .lg-notice-text {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: #d8e2f4;
+}
+
+#lg-hud-root-v1 .lg-notice-close {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  border: none;
+  background: transparent;
+  color: #b0c4de;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#lg-hud-root-v1 .lg-notice-close:hover {
+  background: rgba(255, 255, 255, .15);
+  color: #fff;
+}
+
+#lg-hud-root-v1 .lg-notice-close svg {
+  width: 12px;
+  height: 12px;
 }
 
 #lg-hud-root-v1 .lg-panel {
@@ -278,6 +377,17 @@
   font-weight: 400;
   flex: 1;
   overflow: auto;
+  transform-origin: center center;
+  transition: transform .25s cubic-bezier(.22, 1, .36, 1);
+  will-change: transform;
+}
+
+/* Real glass magnifies whatever's behind it — hovering a panel with this on
+   makes its content read as very slightly bigger, like looking through it.
+   Scoped to the panel actually under the cursor, and clipped by the panel's
+   own overflow:hidden so it never spills onto neighboring widgets. */
+#lg-hud-root-v1.lg-panel-zoom-on .lg-panel:hover > .lg-body {
+  transform: scale(var(--lg-panel-zoom-amt, 1.06));
 }
 
 #lg-hud-root-v1 .lg-row {
@@ -1203,15 +1313,253 @@
   font-size: 14px;
 }
 
-#lg-hud-root-v1 .lg-chat-live-pulse {
-  font-size: 9.5px;
-  font-weight: 700;
-  color: #22c55e;
-  letter-spacing: .05em;
+/* ── Online count pill + hover list (replaces the old LIVE badge) ───────── */
+#lg-hud-root-v1 .lg-chat-online {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 4px;
+}
+
+#lg-hud-root-v1 .lg-chat-online-pill {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(34, 197, 94, 0.35);
+  background: rgba(34, 197, 94, 0.12);
+  color: #86efac;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+#lg-hud-root-v1 .lg-chat-online-pill:hover {
+  background: rgba(34, 197, 94, 0.2);
+}
+
+#lg-hud-root-v1 .lg-online-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 6px #22c55e;
   animation: lg-pulse-green 2s infinite ease-in-out;
+}
+
+#lg-hud-root-v1 .lg-chat-online-pop {
+  display: none;
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 40;
+  min-width: 190px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 6px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(12, 20, 44, 0.97);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+}
+
+#lg-hud-root-v1 .lg-chat-online-pop.visible {
+  display: block;
+}
+
+#lg-hud-root-v1 .lg-chat-online-pop-title {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  color: #64748b;
+  padding: 4px 8px 6px;
+}
+
+#lg-hud-root-v1 .lg-chat-online-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #e2e8f0;
+  font-size: 12.5px;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+#lg-hud-root-v1 .lg-chat-online-row:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+#lg-hud-root-v1 .lg-chat-online-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#lg-hud-root-v1 .lg-chat-online-you {
+  font-size: 9.5px;
+  color: #64748b;
+  font-weight: 700;
+}
+
+/* ── Direct messages ───────────────────────────────────────────────────── */
+#lg-hud-root-v1 .lg-chat-dm-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+#lg-hud-root-v1 .lg-chat-dm-item {
+  display: flex;
+  align-items: center;
+  padding: 0;
+}
+
+#lg-hud-root-v1 .lg-chat-dm-open {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+#lg-hud-root-v1 .lg-chat-dm-avatar {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  color: #0b1020;
+}
+
+#lg-hud-root-v1 .lg-chat-dm-presence {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #475569;
+}
+
+#lg-hud-root-v1 .lg-chat-dm-presence.online {
+  background: #22c55e;
+  box-shadow: 0 0 6px #22c55e;
+}
+
+#lg-hud-root-v1 .lg-chat-dm-close {
+  flex: none;
+  border: none;
+  background: transparent;
+  color: #64748b;
+  font-size: 15px;
+  line-height: 1;
+  padding: 4px 8px;
+  cursor: pointer;
+  opacity: 0;
+  font-family: inherit;
+}
+
+#lg-hud-root-v1 .lg-chat-dm-item:hover .lg-chat-dm-close {
+  opacity: 1;
+}
+
+#lg-hud-root-v1 .lg-chat-dm-close:hover {
+  color: #f87171;
+}
+
+#lg-hud-root-v1 .lg-chat-dm-hint {
+  font-size: 10.5px;
+  color: #64748b;
+  padding: 4px 8px;
+  line-height: 1.5;
+}
+
+/* ── Click-a-user menu ─────────────────────────────────────────────────── */
+#lg-hud-root-v1 .lg-chat-user-menu {
+  display: none;
+  position: fixed;
+  z-index: 60;
+  min-width: 180px;
+  padding: 6px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(12, 20, 44, 0.98);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
+}
+
+#lg-hud-root-v1 .lg-chat-user-menu.visible {
+  display: block;
+}
+
+#lg-hud-root-v1 .lg-chat-user-menu-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 8px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+#lg-hud-root-v1 .lg-chat-user-menu-name {
+  flex: 1;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #e2e8f0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#lg-hud-root-v1 .lg-chat-user-menu-item {
+  display: block;
+  width: 100%;
+  padding: 7px 8px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #e2e8f0;
+  font-size: 12.5px;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+#lg-hud-root-v1 .lg-chat-user-menu-item:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+#lg-hud-root-v1 .lg-chat-user-menu-item:disabled {
+  color: #64748b;
+  cursor: default;
+}
+
+#lg-hud-root-v1 .lg-clickable-user {
+  cursor: pointer;
+}
+
+#lg-hud-root-v1 .lg-chat-msg-author.lg-clickable-user:hover {
+  text-decoration: underline;
+}
+
+#lg-hud-root-v1 .lg-chat-msg-avatar.lg-clickable-user:hover {
+  filter: brightness(1.15);
 }
 
 @keyframes lg-pulse-green {
@@ -1616,6 +1964,15 @@
   border-radius: 50%;
   background: #64748b;
   transition: all .15s ease;
+}
+
+/* Fallback video grid, shown inside the panel only when the browser blocks
+   the pop-out call window. The stage itself styles its own contents. */
+#lg-hud-root-v1 .lg-chat-inline-stage {
+  flex: none;
+  height: 260px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  overflow: hidden;
 }
 
 #lg-hud-root-v1 .lg-chat-voice-bar {

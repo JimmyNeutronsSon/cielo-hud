@@ -1,4 +1,4 @@
-import { createPanel } from './panel.js';
+import { createPanel, raisePanel } from './panel.js';
 import { ICONS } from './icons.js';
 import { lgStore } from './storage.js';
 
@@ -127,6 +127,13 @@ export function buildBrowser(root, vw, vh, onRemove) {
   const btnBackToHome = p.querySelector("[data-btn='back-to-home']");
 
   let currentRawUrl = "";
+
+  // Pointerdown on the panel chrome doesn't fire when a click lands inside
+  // the iframe (it's a separate document) — catch focus moving into it via
+  // the window blur it causes, and raise the panel to match.
+  window.addEventListener("blur", () => {
+    if (document.activeElement === iframe) raisePanel(p);
+  });
 
   // Populate Bookmarks
   BOOKMARKS.forEach(bm => {
