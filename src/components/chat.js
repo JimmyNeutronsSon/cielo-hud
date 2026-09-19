@@ -5,6 +5,7 @@ import { getEmbeddedUsername, buildPersonalBookmarklet } from './identity.js';
 import { createVoiceSession } from './voice.js';
 import { createRealtimeChannel } from './realtime.js';
 import { openVoiceWindow, createVideoStage } from './voiceWindow.js';
+import { openQuickCapture } from './quickCapture.js';
 
 const DEFAULT_SUPABASE_URL = "https://mtusdkooiuoocyffsznx.supabase.co";
 const DEFAULT_SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10dXNka29vaXVvb2N5ZmZzem54Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg2MzU4NDEsImV4cCI6MjA5NDIxMTg0MX0.b9zhiqVqykppmthj36LgMr_tbitnht3YkRyT69gkS9E";
@@ -162,6 +163,9 @@ export function buildChat(root, vw, vh, onRemove) {
                a plain voice call needs no second window at all. -->
           <div data-vc-audio style="display:none;"></div>
 
+          <!-- Quick Photo Capture Overlay -->
+          <div class="lg-capture-overlay" data-capture-overlay style="display:none;"></div>
+
           <!-- Settings Drawer -->
           <div class="lg-chat-settings-drawer" data-settings-drawer style="display:none;">
             <div class="lg-chat-settings-title">⚡ Cielo Account</div>
@@ -209,6 +213,7 @@ export function buildChat(root, vw, vh, onRemove) {
               <input type="file" accept="image/*" data-file-input style="display:none;" />
               <div class="lg-chat-composer-tools">
                 <button class="lg-chat-tool-btn" data-btn="attach-image" title="Attach / Upload Image">🖼️</button>
+                <button class="lg-chat-tool-btn" data-btn="quick-photo" title="Take a Quick Photo">📷</button>
                 <button class="lg-chat-tool-btn" data-btn="quick-emoji" title="Add Emoji">😊</button>
                 <button class="lg-chat-send-btn" data-btn="chat-send" title="Send">${ICONS.chat}</button>
               </div>
@@ -233,6 +238,9 @@ export function buildChat(root, vw, vh, onRemove) {
   const input = p.querySelector("[data-chat-input]");
   const fileInput = p.querySelector("[data-file-input]");
   const attachImageBtn = p.querySelector("[data-btn='attach-image']");
+  const quickPhotoBtn = p.querySelector("[data-btn='quick-photo']");
+  const captureOverlay = p.querySelector("[data-capture-overlay]");
+  let activeCapture = null;
   const imgPreviewRow = p.querySelector("[data-img-preview-row]");
   const previewImg = p.querySelector("[data-preview-img]");
   const removePreviewBtn = p.querySelector("[data-btn='remove-preview']");
@@ -885,6 +893,14 @@ export function buildChat(root, vw, vh, onRemove) {
 
   removePreviewBtn.addEventListener("click", clearPendingImage);
 
+  quickPhotoBtn.addEventListener("click", () => {
+    if (activeCapture) return;
+    activeCapture = openQuickCapture(captureOverlay, {
+      onCapture: (dataUrl) => setPendingImage(dataUrl),
+      onClose: () => { activeCapture = null; }
+    });
+  });
+
   // ── Voice Chat ────────────────────────────────────────────────────────────
   // Real mesh WebRTC (see voice.js). Audio plays here in the page; video tiles
   // are rendered in a separate pop-out window, falling back to an inline grid
@@ -1293,6 +1309,7 @@ export function buildChat(root, vw, vh, onRemove) {
       voice.destroy();
       voice = null;
     }
+    if (activeCapture) activeCapture.close();
     presenceChannel.close();
     document.removeEventListener("click", onDocClick, true);
   }
