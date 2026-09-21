@@ -229,37 +229,118 @@ export function buildYouTube(root, vw, vh, onRemove) {
   // which some browsers/extensions handle inconsistently for popups) so the
   // iframe ends up in an ordinary same-origin document just like the inline
   // version.
-  function getEmbedUrl(videoId) {
+  function getEmbedUrl(videoId, source = "nocookie", invidiousInstance = null) {
+    if (source === "invidious" && invidiousInstance) {
+      const base = invidiousInstance.replace(/\/$/, "");
+      return `${base}/embed/${videoId}?autoplay=1`;
+    }
+    if (source === "piped") {
+      return `https://piped.video/embed/${videoId}?autoplay=1`;
+    }
     return `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&origin=${window.location.origin}`;
   }
 
-  function playInNewWindow(videoId, title = "") {
+  async function playInNewWindow(videoId, title = "", initialSource = null, initialInstance = null) {
     if (!videoId) return;
-    const embedUrl = getEmbedUrl(videoId);
 
-    // Open in about:blank using the cloak hack method (same method as cloak.js / JimmyNeutronsSon.github.io)
-    const win = window.open("about:blank", "_blank");
+    let invInstance = initialInstance;
+    if (!invInstance) {
+      try {
+        const instances = await getInvidiousInstances();
+        invInstance = instances[0] || INVIDIOUS_FALLBACK[0];
+      } catch {
+        invInstance = INVIDIOUS_FALLBACK[0];
+      }
+    }
+
+    const win = window.open("about:blank", `yt_popup_${videoId}`, "width=920,height=560,resizable=yes,status=no,toolbar=no,menubar=no");
     if (!win) return;
 
-    const doc = win.document;
-    doc.title = "My Apps";
+    win.document.title = title ? `YouTube Unrestricted - ${title}` : `YouTube Unrestricted - ${videoId}`;
 
-    // Set decoy favicon (classlink.ico)
-    const iconLink = doc.createElement("link");
-    iconLink.rel = "icon";
-    iconLink.type = "image/x-icon";
-    iconLink.href = window.location.origin + "/classlink.ico";
-    doc.head.appendChild(iconLink);
+    const style = win.document.createElement("style");
+    style.textContent = `
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #0f0f11; color: #fff; font-family: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; overflow: hidden; display: flex; flex-direction: column; }
+      .yt-bar { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; background: #18181c; border-bottom: 1px solid rgba(255,255,255,0.1); font-size: 13px; gap: 12px; flex-shrink: 0; }
+      .yt-bar-title { font-weight: 800; color: #fff; font-size: 16px; display: flex; align-items: center; gap: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .yt-bar-title span { font-weight: 300; color: #3A8FE0; }
+      .yt-hint { font-size: 11px; color: rgba(255,255,255,0.4); text-transform: uppercase; letter-spacing: 0.5px; margin-left: 8px; font-weight: 400; }
+      .yt-bar-controls { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+      .yt-src-btn { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); color: #ccc; padding: 5px 12px; border-radius: 8px; font-size: 12px; cursor: pointer; transition: all 0.2s; font-weight: 500; }
+      .yt-src-btn:hover { background: rgba(255,255,255,0.18); color: #fff; }
+      .yt-src-btn.active { background: #3A8FE0; color: #fff; border-color: #3A8FE0; font-weight: 700; box-shadow: 0 2px 10px rgba(58,143,224,0.4); }
+      .yt-action-btn { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.15); color: #aaa; padding: 5px 10px; border-radius: 8px; font-size: 12px; cursor: pointer; transition: all 0.2s; }
+      .yt-action-btn:hover { background: rgba(255,255,255,0.15); color: #fff; }
+      .yt-player-wrap { flex: 1; position: relative; width: 100%; height: 100%; background: #000; }
+      iframe { width: 100%; height: 100%; border: none; }
+    `;
+    win.document.head.appendChild(style);
 
-    const style = doc.createElement("style");
-    style.textContent = "html, body { margin: 0; padding: 0; width: 100vw; height: 100vh; background: #000; overflow: hidden; } iframe { width: 100vw; height: 100vh; border: none; margin: 0; }";
-    doc.head.appendChild(style);
+    const bar = win.document.createElement("div");
+    bar.className = "yt-bar";
+    bar.innerHTML = `
+      <div class="yt-bar-title">
+        YouTube <span>Unrestricted</span>
+        <span class="yt-hint">[ ' ] Cloak | [ - ] Clear</span>
+      </div>
+      <div class="yt-bar-controls">
+        <span style="font-size: 11px; color: #888;">Unblocker:</span>
+        <button class="yt-src-btn ${!initialSource || initialSource === 'nocookie' ? 'active' : ''}" data-src="nocookie">No-Cookie</button>
+        <button class="yt-src-btn ${initialSource === 'invidious' ? 'active' : ''}" data-src="invidious">Invidious</button>
+        <button class="yt-src-btn ${initialSource === 'piped' ? 'active' : ''}" data-src="piped">Piped</button>
+        <button class="yt-action-btn" data-action="cloak" title="Hotkey: '">Cloak</button>
+      </div>
+    `;
+    win.document.body.appendChild(bar);
 
-    const iframe = doc.createElement("iframe");
-    iframe.src = embedUrl;
-    iframe.allow = "autoplay; encrypted-media; picture-in-picture";
-    iframe.allowFullscreen = true;
-    doc.body.appendChild(iframe);
+    const playerWrap = win.document.createElement("div");
+    playerWrap.className = "yt-player-wrap";
+    win.document.body.appendChild(playerWrap);
+
+    let currentSource = initialSource || "nocookie";
+
+    function loadSource(srcType) {
+      currentSource = srcType;
+      playerWrap.innerHTML = "";
+      const iframe = win.document.createElement("iframe");
+      iframe.src = getEmbedUrl(videoId, srcType, invInstance);
+      iframe.allow = "autoplay; encrypted-media; picture-in-picture";
+      iframe.allowFullscreen = true;
+      playerWrap.appendChild(iframe);
+
+      bar.querySelectorAll(".yt-src-btn").forEach(b => {
+        b.classList.toggle("active", b.dataset.src === srcType);
+      });
+    }
+
+    loadSource(currentSource);
+
+    bar.querySelectorAll(".yt-src-btn").forEach(btn => {
+      btn.addEventListener("click", () => loadSource(btn.dataset.src));
+    });
+
+    function toggleCloak() {
+      win.document.title = "Google";
+      let link = win.document.querySelector("link[rel*='icon']") || win.document.createElement("link");
+      link.type = "image/x-icon";
+      link.rel = "shortcut icon";
+      link.href = "https://www.google.com/favicon.ico";
+      win.document.head.appendChild(link);
+    }
+
+    bar.querySelector('[data-action="cloak"]').addEventListener("click", toggleCloak);
+
+    win.document.addEventListener("keydown", (e) => {
+      if (win.document.activeElement && win.document.activeElement.tagName === "INPUT") return;
+      if (e.key === "'") {
+        e.preventDefault();
+        toggleCloak();
+      } else if (e.key === "-") {
+        e.preventDefault();
+        win.close();
+      }
+    });
   }
 
   let searchToken = 0;
@@ -342,7 +423,7 @@ export function buildYouTube(root, vw, vh, onRemove) {
         </div>
       `;
       card.addEventListener("click", () => {
-        playInNewWindow(item.id, item.title);
+        playInNewWindow(item.id, item.title, result.source, result.instance);
       });
       list.appendChild(card);
     });
