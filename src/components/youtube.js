@@ -159,8 +159,6 @@ export function buildYouTube(root, vw, vh, onRemove) {
   const x = Math.max(20, Math.floor((vw - width) / 2));
   const y = Math.max(40, Math.floor((vh - height) / 2));
 
-  let currentVideoId = null;
-  let activeIframe = null;
   let searchDebounceTimer = null;
 
   const panel = createPanel(root, {
@@ -178,24 +176,6 @@ export function buildYouTube(root, vw, vh, onRemove) {
             <span class="lg-yt-search-ic">${ICONS.search}</span>
             <input type="text" class="lg-yt-search" placeholder="Search YouTube or paste URL / ID…" spellcheck="false" />
           </div>
-          <button class="lg-yt-popout-btn" data-popout title="Open in separate detached window (Max resource efficiency)" hidden>
-            ${ICONS.external} Detach
-          </button>
-        </div>
-
-        <div class="lg-yt-player-container" data-player-box hidden>
-          <div class="lg-yt-player-frame" data-player-frame></div>
-          <div class="lg-yt-player-meta">
-            <span class="lg-yt-player-title" data-player-title></span>
-            <div class="lg-yt-player-actions">
-              <select class="lg-yt-mode-select" data-embed-mode title="Select Bypass Embed Source">
-                <option value="nocookie">Embed Bypass (nocookie)</option>
-                <option value="piped">Piped Proxy</option>
-                <option value="invidious">Invidious Proxy</option>
-              </select>
-              <button class="lg-yt-btn lg-yt-close-player" data-close-player title="Close Player & Free Memory">Close Player</button>
-            </div>
-          </div>
         </div>
 
         <div class="lg-yt-results" data-results>
@@ -210,107 +190,39 @@ export function buildYouTube(root, vw, vh, onRemove) {
 
   const searchInput = panel.querySelector(".lg-yt-search");
   const resultsContainer = panel.querySelector("[data-results]");
-  const playerBox = panel.querySelector("[data-player-box]");
-  const playerFrame = panel.querySelector("[data-player-frame]");
-  const playerTitle = panel.querySelector("[data-player-title]");
-  const popoutBtn = panel.querySelector("[data-popout]");
-  const closePlayerBtn = panel.querySelector("[data-close-player]");
-  const modeSelect = panel.querySelector("[data-embed-mode]");
 
-  // Resource-efficient iframe cleanup
-  function destroyPlayer() {
-    if (activeIframe) {
-      activeIframe.src = "about:blank";
-      activeIframe.remove();
-      activeIframe = null;
-    }
-    playerFrame.innerHTML = "";
-    playerBox.hidden = true;
-    popoutBtn.hidden = true;
-    currentVideoId = null;
+  // Same lightweight, unrestricted embed technique used by the Welkin
+  // YouTube widget: a plain nocookie iframe with `origin` set, opened in its
+  // own about:blank window rather than inline, so playback survives the HUD
+  // panel closing and doesn't get torn down when panels are swapped.
+  function getEmbedUrl(videoId) {
+    return `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&origin=${encodeURIComponent(window.location.origin)}`;
   }
 
-  function getEmbedUrl(videoId, mode) {
-    switch (mode) {
-      case "piped":
-        return `https://piped.video/embed/${videoId}?autoplay=1`;
-      case "invidious":
-        return `https://yewtu.be/embed/${videoId}?autoplay=1`;
-      case "nocookie":
-      default:
-        // Simple YouTube Age Restriction Bypass technique: nocookie embed with raw parameters
-        return `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&modestbranding=1&rel=0`;
-    }
-  }
-
-  function loadPlayer(videoId, title = "") {
-    destroyPlayer();
-    currentVideoId = videoId;
-    playerTitle.textContent = title || `Video (${videoId})`;
-    
-    const embedUrl = getEmbedUrl(videoId, modeSelect.value);
-    const iframe = document.createElement("iframe");
-    iframe.className = "lg-yt-iframe";
-    iframe.src = embedUrl;
-    iframe.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture";
-    iframe.allowFullscreen = true;
-    iframe.referrerPolicy = "no-referrer";
-    
-    playerFrame.appendChild(iframe);
-    activeIframe = iframe;
-    playerBox.hidden = false;
-    popoutBtn.hidden = false;
-  }
-
-  // Open detached window for maximum resource efficiency & performance isolation
-  function openDetachedWindow(videoId) {
+  function playInNewWindow(videoId, title = "") {
     if (!videoId) return;
-    const mode = modeSelect.value;
-    const embedUrl = getEmbedUrl(videoId, mode);
-    
-    const win = window.open(
-      "",
-      `yt_popup_${videoId}`,
-      `width=854,height=480,resizable=yes,status=no,toolbar=no,menubar=no`
-    );
-    if (win) {
-      win.document.write(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>YouTube Player - ${videoId}</title>
-          <style>
-            html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; }
-            iframe { width: 100%; height: 100%; border: none; }
-          </style>
-        </head>
-        <body>
-          <iframe src="${embedUrl}" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen referrerPolicy="no-referrer"></iframe>
-        </body>
-        </html>
-      `);
-      win.document.close();
-      // Destroy in-panel iframe once detached window is opened to save memory
-      destroyPlayer();
-    }
+    const embedUrl = getEmbedUrl(videoId);
+
+    const win = window.open("about:blank", `yt_popup_${videoId}`, "width=854,height=480,resizable=yes,status=no,toolbar=no,menubar=no");
+    if (!win) return;
+
+    win.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>${escapeHtml(title || `YouTube - ${videoId}`)}</title>
+        <style>
+          html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; }
+          iframe { width: 100%; height: 100%; border: none; }
+        </style>
+      </head>
+      <body>
+        <iframe src="${embedUrl}" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen referrerPolicy="no-referrer"></iframe>
+      </body>
+      </html>
+    `);
+    win.document.close();
   }
-
-  // Event handlers
-  modeSelect.addEventListener("change", () => {
-    if (currentVideoId) {
-      loadPlayer(currentVideoId, playerTitle.textContent);
-    }
-  });
-
-  closePlayerBtn.addEventListener("click", () => {
-    destroyPlayer();
-  });
-
-  popoutBtn.addEventListener("click", () => {
-    if (currentVideoId) {
-      openDetachedWindow(currentVideoId);
-    }
-  });
 
   let searchToken = 0;
 
@@ -328,8 +240,8 @@ export function buildYouTube(root, vw, vh, onRemove) {
 
     const directId = extractVideoId(q);
     if (directId) {
-      loadPlayer(directId, `Direct Video (${directId})`);
-      resultsContainer.innerHTML = `<div class="lg-yt-status">Playing direct video: <strong>${directId}</strong></div>`;
+      playInNewWindow(directId, `Direct Video (${directId})`);
+      resultsContainer.innerHTML = `<div class="lg-yt-status">Opened direct video in a new window: <strong>${directId}</strong></div>`;
       return;
     }
 
@@ -355,7 +267,7 @@ export function buildYouTube(root, vw, vh, onRemove) {
         </div>
       `;
       resultsContainer.querySelector("[data-retry]")?.addEventListener("click", handleSearch);
-      resultsContainer.querySelector("[data-direct-play]")?.addEventListener("click", () => loadPlayer(q, q));
+      resultsContainer.querySelector("[data-direct-play]")?.addEventListener("click", () => playInNewWindow(q, q));
       return;
     }
 
@@ -369,7 +281,7 @@ export function buildYouTube(root, vw, vh, onRemove) {
           </div>
         </div>
       `;
-      resultsContainer.querySelector("[data-direct-play]")?.addEventListener("click", () => loadPlayer(q, q));
+      resultsContainer.querySelector("[data-direct-play]")?.addEventListener("click", () => playInNewWindow(q, q));
       return;
     }
 
@@ -392,7 +304,7 @@ export function buildYouTube(root, vw, vh, onRemove) {
         </div>
       `;
       card.addEventListener("click", () => {
-        loadPlayer(item.id, item.title);
+        playInNewWindow(item.id, item.title);
       });
       list.appendChild(card);
     });
@@ -412,16 +324,11 @@ export function buildYouTube(root, vw, vh, onRemove) {
     }
   });
 
-  // Resource cleanup on unmount / HUD tear down
-  const onHudClose = () => {
-    destroyPlayer();
-    clearTimeout(searchDebounceTimer);
-  };
-  root.addEventListener("lg:hud-close", onHudClose, { once: true });
+  root.addEventListener("lg:hud-close", () => clearTimeout(searchDebounceTimer), { once: true });
 
   const originalRemove = panel.remove.bind(panel);
   panel.remove = () => {
-    onHudClose();
+    clearTimeout(searchDebounceTimer);
     if (onRemove) onRemove("youtube");
     originalRemove();
   };
