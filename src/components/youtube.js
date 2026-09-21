@@ -10,49 +10,147 @@ function extractVideoId(input) {
   return match ? match[1] : null;
 }
 
-// Fallback search engines for unblocked/restricted-free video search & metadata
-const INVIDIOUS_INSTANCES = [
-  "https://vid.puffyan.us",
-  "https://inv.tux.pizza",
-  "https://invidious.drgns.space",
-  "https://yt.drgnz.club"
+// Public Invidious/Piped mirrors rotate and die within weeks, so a hardcoded
+// list goes stale fast. These are only the last-resort fallback if the live
+// instance directory below can't be reached at all.
+const INVIDIOUS_FALLBACK = [
+  "https://invidious.f5.si",
+  "https://yewtu.be"
 ];
 
+const PIPED_INSTANCES = [
+  "https://pipedapi.kavin.rocks",
+  "https://pipedapi.adminforge.de",
+  "https://api.piped.yt"
+];
+
+// api.invidious.io tracks which public mirrors are currently up and which
+// ones actually expose the API with CORS enabled, so pulling this list live
+// (once per session) is far more reliable than any hardcoded snapshot.
+let invidiousInstancesPromise = null;
+async function getInvidiousInstances() {
+  if (!invidiousInstancesPromise) {
+    invidiousInstancesPromise = fetch("https://api.invidious.io/instances.json", {
+      signal: AbortSignal.timeout(5000)
+    })
+      .then(res => res.json())
+      .then(data => {
+        const hosts = data
+          .filter(([, info]) => info.type === "https" && info.api === true && info.monitor && !info.monitor.down)
+          .sort((a, b) => (b[1].monitor.uptime || 0) - (a[1].monitor.uptime || 0))
+          .slice(0, 8)
+          .map(([, info]) => info.uri);
+        return hosts.length > 0 ? hosts : INVIDIOUS_FALLBACK;
+      })
+      .catch(() => INVIDIOUS_FALLBACK);
+  }
+  return invidiousInstancesPromise;
+}
+
+function formatDuration(totalSeconds) {
+  if (!totalSeconds || totalSeconds <= 0) return "";
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = Math.floor(totalSeconds % 60).toString().padStart(2, "0");
+  return h > 0 ? `${h}:${m.toString().padStart(2, "0")}:${s}` : `${m}:${s}`;
+}
+
+function formatViews(views) {
+  if (views === null || views === undefined || isNaN(views)) return "";
+  try {
+    return `${new Intl.NumberFormat("en", { notation: "compact" }).format(views)} views`;
+  } catch {
+    return `${views} views`;
+  }
+}
+
+// Races a fetch across every mirror in the list and returns whichever
+// responds first with usable data -- far faster than trying them one at a
+// time, since a dead mirror otherwise costs the full timeout before moving on.
+async function raceMirrors(urls, timeoutMs) {
+  const attempts = urls.map(url =>
+    fetch(url, { signal: AbortSignal.timeout(timeoutMs) }).then(res => {
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
+    })
+  );
+  return Promise.any(attempts);
+}
+
+async function searchPiped(query) {
+  const data = await raceMirrors(
+    PIPED_INSTANCES.map(base => `${base}/search?q=${encodeURIComponent(query)}&filter=videos`),
+    4500
+  );
+  const items = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
+  return items
+    .map(item => {
+      const id = extractVideoId(item.url) || item.url?.split("v=")[1];
+      if (!id) return null;
+      return {
+        id,
+        title: item.title || "Untitled Video",
+        uploader: item.uploaderName || "YouTube",
+        duration: formatDuration(item.duration),
+        views: formatViews(item.views),
+        uploaded: item.uploadedDate || "",
+        thumbnail: item.thumbnail || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 24);
+}
+
+async function searchInvidious(query) {
+  const instances = await getInvidiousInstances();
+  const data = await raceMirrors(
+    instances.map(base => `${base}/api/v1/search?q=${encodeURIComponent(query)}&type=video`),
+    4500
+  );
+  const items = Array.isArray(data) ? data : [];
+  return items
+    .map(item => ({
+      id: item.videoId,
+      title: item.title || "Untitled Video",
+      uploader: item.author || "YouTube",
+      duration: formatDuration(item.lengthSeconds),
+      views: formatViews(item.viewCount),
+      uploaded: item.publishedText || "",
+      thumbnail: item.videoThumbnails?.find(t => t.quality === "medium")?.url || `https://i.ytimg.com/vi/${item.videoId}/hqdefault.jpg`
+    }))
+    .filter(item => item.id)
+    .slice(0, 24);
+}
+
+// Returns { items } on success or { error: true } if every mirror failed,
+// so the caller can tell "no results" apart from "couldn't reach a proxy".
 async function searchYouTube(query) {
   const videoId = extractVideoId(query);
   if (videoId) {
-    return [{
-      id: videoId,
-      title: `Direct Video (${videoId})`,
-      uploader: "YouTube",
-      duration: "",
-      thumbnail: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`
-    }];
+    return {
+      items: [{
+        id: videoId,
+        title: `Direct Video (${videoId})`,
+        uploader: "YouTube",
+        duration: "",
+        views: "",
+        uploaded: "",
+        thumbnail: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`
+      }]
+    };
   }
 
-  // Attempt search across invidious API instances
-  for (const baseUrl of INVIDIOUS_INSTANCES) {
-    try {
-      const res = await fetch(`${baseUrl}/api/v1/search?q=${encodeURIComponent(query)}&type=video`, {
-        signal: AbortSignal.timeout(3500)
-      });
-      if (!res.ok) continue;
-      const data = await res.json();
-      if (Array.isArray(data) && data.length > 0) {
-        return data.slice(0, 15).map(item => ({
-          id: item.videoId,
-          title: item.title || "Untitled Video",
-          uploader: item.author || "YouTube",
-          duration: item.lengthSeconds ? `${Math.floor(item.lengthSeconds / 60)}:${(item.lengthSeconds % 60).toString().padStart(2, '0')}` : "",
-          thumbnail: item.videoThumbnails?.find(t => t.quality === "medium")?.url || `https://i.ytimg.com/vi/${item.videoId}/hqdefault.jpg`
-        }));
-      }
-    } catch {
-      // continue fallback loop
-    }
+  try {
+    return { items: await searchInvidious(query) };
+  } catch {
+    // fall through to piped
   }
 
-  return [];
+  try {
+    return { items: await searchPiped(query) };
+  } catch {
+    return { error: true };
+  }
 }
 
 export function buildYouTube(root, vw, vh, onRemove) {
@@ -101,7 +199,10 @@ export function buildYouTube(root, vw, vh, onRemove) {
         </div>
 
         <div class="lg-yt-results" data-results>
-          <div class="lg-yt-status">Search for videos above or paste a video URL.</div>
+          <div class="lg-yt-status">
+            <span class="lg-yt-status-icon">${ICONS.search}</span>
+            Search for videos above, or paste a video URL / ID.
+          </div>
         </div>
       </div>
     `
@@ -211,10 +312,17 @@ export function buildYouTube(root, vw, vh, onRemove) {
     }
   });
 
+  let searchToken = 0;
+
   async function handleSearch() {
     const q = searchInput.value.trim();
     if (!q) {
-      resultsContainer.innerHTML = `<div class="lg-yt-status">Search for videos above or paste a video URL.</div>`;
+      resultsContainer.innerHTML = `
+        <div class="lg-yt-status">
+          <span class="lg-yt-status-icon">${ICONS.search}</span>
+          Search for videos above, or paste a video URL / ID.
+        </div>
+      `;
       return;
     }
 
@@ -225,21 +333,43 @@ export function buildYouTube(root, vw, vh, onRemove) {
       return;
     }
 
-    resultsContainer.innerHTML = `<div class="lg-yt-status">Searching YouTube…</div>`;
+    const token = ++searchToken;
+    resultsContainer.innerHTML = `
+      <div class="lg-yt-status">
+        <span class="lg-yt-spinner"></span>
+        Searching for "${escapeHtml(q)}"…
+      </div>
+    `;
 
-    const items = await searchYouTube(q);
-    if (!items || items.length === 0) {
+    const result = await searchYouTube(q);
+    if (token !== searchToken) return; // a newer search superseded this one
+
+    if (result.error) {
       resultsContainer.innerHTML = `
-        <div class="lg-yt-status">
-          No direct API results. <button class="lg-yt-link-btn" data-direct-play>Try playing raw video URL/ID</button>
+        <div class="lg-yt-status lg-yt-status-error">
+          Couldn't reach any search proxy right now — they're often flaky.
+          <div class="lg-yt-status-actions">
+            <button class="lg-yt-link-btn" data-retry>Retry search</button>
+            <button class="lg-yt-link-btn" data-direct-play>Play as raw URL/ID instead</button>
+          </div>
         </div>
       `;
-      const directBtn = resultsContainer.querySelector("[data-direct-play]");
-      if (directBtn) {
-        directBtn.addEventListener("click", () => {
-          if (q) loadPlayer(q, q);
-        });
-      }
+      resultsContainer.querySelector("[data-retry]")?.addEventListener("click", handleSearch);
+      resultsContainer.querySelector("[data-direct-play]")?.addEventListener("click", () => loadPlayer(q, q));
+      return;
+    }
+
+    const items = result.items || [];
+    if (items.length === 0) {
+      resultsContainer.innerHTML = `
+        <div class="lg-yt-status">
+          No results for "${escapeHtml(q)}".
+          <div class="lg-yt-status-actions">
+            <button class="lg-yt-link-btn" data-direct-play>Try playing raw video URL/ID</button>
+          </div>
+        </div>
+      `;
+      resultsContainer.querySelector("[data-direct-play]")?.addEventListener("click", () => loadPlayer(q, q));
       return;
     }
 
@@ -248,6 +378,7 @@ export function buildYouTube(root, vw, vh, onRemove) {
     list.className = "lg-yt-grid";
 
     items.forEach(item => {
+      const sub = [item.uploader, item.views, item.uploaded].filter(Boolean).join(" • ");
       const card = document.createElement("div");
       card.className = "lg-yt-card";
       card.innerHTML = `
@@ -257,7 +388,7 @@ export function buildYouTube(root, vw, vh, onRemove) {
         </div>
         <div class="lg-yt-meta">
           <div class="lg-yt-card-title">${escapeHtml(item.title)}</div>
-          <div class="lg-yt-card-sub">${escapeHtml(item.uploader)}</div>
+          <div class="lg-yt-card-sub">${escapeHtml(sub)}</div>
         </div>
       `;
       card.addEventListener("click", () => {
@@ -271,7 +402,7 @@ export function buildYouTube(root, vw, vh, onRemove) {
 
   searchInput.addEventListener("input", () => {
     clearTimeout(searchDebounceTimer);
-    searchDebounceTimer = setTimeout(handleSearch, 350);
+    searchDebounceTimer = setTimeout(handleSearch, 450);
   });
 
   searchInput.addEventListener("keydown", (e) => {
