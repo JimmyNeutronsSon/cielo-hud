@@ -229,51 +229,81 @@ export function buildYouTube(root, vw, vh, onRemove) {
   // which some browsers/extensions handle inconsistently for popups) so the
   // iframe ends up in an ordinary same-origin document just like the inline
   // version.
-  function getEmbedUrl(videoId, source = "nocookie", invidiousInstance = null) {
-    if (source === "invidious" && invidiousInstance) {
-      const base = invidiousInstance.replace(/\/$/, "");
-      return `${base}/embed/${videoId}?autoplay=1`;
+  let liveEmbedSourcesPromise = null;
+
+  async function getLiveInvidiousSources() {
+    if (!liveEmbedSourcesPromise) {
+      liveEmbedSourcesPromise = fetch("https://api.invidious.io/instances.json?sort_by=health", {
+        signal: AbortSignal.timeout(5000)
+      })
+        .then(res => res.json())
+        .then(data => {
+          const dynamicSources = [];
+          if (Array.isArray(data)) {
+            data.forEach(([, details]) => {
+              if (
+                details &&
+                details.type === "https" &&
+                details.uri &&
+                details.monitor &&
+                (details.monitor.uptime === undefined || details.monitor.uptime > 95) &&
+                (details.monitor.last_status === undefined || details.monitor.last_status === 200)
+              ) {
+                const base = details.uri.replace(/\/$/, "");
+                dynamicSources.push(id => `${base}/embed/${id}?autoplay=1`);
+              }
+            });
+          }
+          return dynamicSources.sort(() => Math.random() - 0.5);
+        })
+        .catch(() => [
+          id => `https://invidious.f5.si/embed/${id}?autoplay=1`,
+          id => `https://yewtu.be/embed/${id}?autoplay=1`
+        ]);
     }
-    if (source === "piped") {
-      return `https://piped.video/embed/${videoId}?autoplay=1`;
-    }
-    return `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&origin=${window.location.origin}`;
+    return liveEmbedSourcesPromise;
   }
 
-  async function playInNewWindow(videoId, title = "", initialSource = null, initialInstance = null) {
+  async function getNoreptedSourcesPool() {
+    const baseSources = [
+      id => `https://www.youtube-nocookie.com/embed/${id}?autoplay=1&rel=0&playsinline=1&origin=${window.location.origin}`,
+      id => `https://www.youtube.com/embed/${id}?autoplay=1&rel=0&playsinline=1&origin=${window.location.origin}`
+    ];
+    const liveSources = await getLiveInvidiousSources();
+    return [...baseSources, ...liveSources];
+  }
+
+  async function playInNewWindow(videoId, title = "") {
     if (!videoId) return;
 
-    let invInstance = initialInstance;
-    if (!invInstance) {
-      try {
-        const instances = await getInvidiousInstances();
-        invInstance = instances[0] || INVIDIOUS_FALLBACK[0];
-      } catch {
-        invInstance = INVIDIOUS_FALLBACK[0];
-      }
-    }
+    const sourcesPool = await getNoreptedSourcesPool();
+    let srcIdx = 0;
+    let fallbackTimer = null;
 
     const win = window.open("about:blank", `yt_popup_${videoId}`, "width=920,height=560,resizable=yes,status=no,toolbar=no,menubar=no");
     if (!win) return;
 
-    win.document.title = title ? `YouTube Unrestricted - ${title}` : `YouTube Unrestricted - ${videoId}`;
+    win.document.title = title ? `Norepted - ${title}` : `Norepted - ${videoId}`;
 
     const style = win.document.createElement("style");
     style.textContent = `
       * { box-sizing: border-box; }
-      html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #0f0f11; color: #fff; font-family: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; overflow: hidden; display: flex; flex-direction: column; }
+      html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #0f0f11; color: #fff; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; overflow: hidden; display: flex; flex-direction: column; }
       .yt-bar { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; background: #18181c; border-bottom: 1px solid rgba(255,255,255,0.1); font-size: 13px; gap: 12px; flex-shrink: 0; }
-      .yt-bar-title { font-weight: 800; color: #fff; font-size: 16px; display: flex; align-items: center; gap: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .yt-bar-title span { font-weight: 300; color: #3A8FE0; }
-      .yt-hint { font-size: 11px; color: rgba(255,255,255,0.4); text-transform: uppercase; letter-spacing: 0.5px; margin-left: 8px; font-weight: 400; }
+      .yt-bar-title { font-weight: 700; color: #fff; font-size: 15px; display: flex; align-items: center; gap: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .yt-bar-title span { color: #3A8FE0; font-weight: 400; font-size: 12px; margin-left: 6px; }
       .yt-bar-controls { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-      .yt-src-btn { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); color: #ccc; padding: 5px 12px; border-radius: 8px; font-size: 12px; cursor: pointer; transition: all 0.2s; font-weight: 500; }
-      .yt-src-btn:hover { background: rgba(255,255,255,0.18); color: #fff; }
-      .yt-src-btn.active { background: #3A8FE0; color: #fff; border-color: #3A8FE0; font-weight: 700; box-shadow: 0 2px 10px rgba(58,143,224,0.4); }
-      .yt-action-btn { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.15); color: #aaa; padding: 5px 10px; border-radius: 8px; font-size: 12px; cursor: pointer; transition: all 0.2s; }
-      .yt-action-btn:hover { background: rgba(255,255,255,0.15); color: #fff; }
+      .yt-btn { background: #3A8FE0; border: none; color: #fff; padding: 5px 12px; border-radius: 8px; font-size: 12px; cursor: pointer; font-weight: 600; transition: all 0.2s; }
+      .yt-btn:hover { background: #4ca0f2; transform: scale(1.02); }
+      .yt-action-btn { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); color: #ccc; padding: 5px 10px; border-radius: 8px; font-size: 12px; cursor: pointer; transition: all 0.2s; }
+      .yt-action-btn:hover { background: rgba(255,255,255,0.18); color: #fff; }
       .yt-player-wrap { flex: 1; position: relative; width: 100%; height: 100%; background: #000; }
       iframe { width: 100%; height: 100%; border: none; }
+      .yt-overlay { position: absolute; inset: 0; background: rgba(15,15,17,0.92); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; padding: 20px; z-index: 10; }
+      .yt-overlay.hidden { display: none; }
+      .yt-spinner { width: 32px; height: 32px; border: 3px solid rgba(255,255,255,0.15); border-top-color: #3A8FE0; border-radius: 50%; animation: yt-spin 0.8s linear infinite; }
+      @keyframes yt-spin { to { transform: rotate(360deg); } }
+      .yt-error-box { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 20px 28px; max-width: 400px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
     `;
     win.document.head.appendChild(style);
 
@@ -281,14 +311,11 @@ export function buildYouTube(root, vw, vh, onRemove) {
     bar.className = "yt-bar";
     bar.innerHTML = `
       <div class="yt-bar-title">
-        YouTube <span>Unrestricted</span>
-        <span class="yt-hint">[ ' ] Cloak | [ - ] Clear</span>
+        Norepted
+        <span>[ ' ] Cloak | [ - ] Clear</span>
       </div>
       <div class="yt-bar-controls">
-        <span style="font-size: 11px; color: #888;">Unblocker:</span>
-        <button class="yt-src-btn ${!initialSource || initialSource === 'nocookie' ? 'active' : ''}" data-src="nocookie">No-Cookie</button>
-        <button class="yt-src-btn ${initialSource === 'invidious' ? 'active' : ''}" data-src="invidious">Invidious</button>
-        <button class="yt-src-btn ${initialSource === 'piped' ? 'active' : ''}" data-src="piped">Piped</button>
+        <button class="yt-btn" data-action="next-mirror">Try Another Source</button>
         <button class="yt-action-btn" data-action="cloak" title="Hotkey: '">Cloak</button>
       </div>
     `;
@@ -296,29 +323,64 @@ export function buildYouTube(root, vw, vh, onRemove) {
 
     const playerWrap = win.document.createElement("div");
     playerWrap.className = "yt-player-wrap";
+
+    const overlay = win.document.createElement("div");
+    overlay.className = "yt-overlay";
+
+    const iframe = win.document.createElement("iframe");
+    iframe.setAttribute("allowfullscreen", "true");
+    iframe.allow = "autoplay; encrypted-media; picture-in-picture; fullscreen";
+
+    playerWrap.appendChild(iframe);
+    playerWrap.appendChild(overlay);
     win.document.body.appendChild(playerWrap);
 
-    let currentSource = initialSource || "nocookie";
-
-    function loadSource(srcType) {
-      currentSource = srcType;
-      playerWrap.innerHTML = "";
-      const iframe = win.document.createElement("iframe");
-      iframe.src = getEmbedUrl(videoId, srcType, invInstance);
-      iframe.allow = "autoplay; encrypted-media; picture-in-picture";
-      iframe.allowFullscreen = true;
-      playerWrap.appendChild(iframe);
-
-      bar.querySelectorAll(".yt-src-btn").forEach(b => {
-        b.classList.toggle("active", b.dataset.src === srcType);
-      });
+    function showSpinner() {
+      overlay.classList.remove("hidden");
+      overlay.innerHTML = `<div class="yt-spinner"></div><div style="font-size:13px;color:#aaa;">Loading mirror (${srcIdx + 1} / ${sourcesPool.length})…</div>`;
     }
 
-    loadSource(currentSource);
+    function showFallbackMessage() {
+      overlay.classList.remove("hidden");
+      overlay.innerHTML = `
+        <div class="yt-error-box">
+          <strong style="font-size:15px;color:#fff;">Still loading?</strong>
+          <span style="font-size:13px;color:#aaa;">If the video fails to load or is blocked, try another source mirror.</span>
+          <button class="yt-btn" data-action="try-next-inside" style="margin-top:6px;">Try Next Source</button>
+        </div>
+      `;
+      overlay.querySelector('[data-action="try-next-inside"]')?.addEventListener("click", tryNext);
+    }
 
-    bar.querySelectorAll(".yt-src-btn").forEach(btn => {
-      btn.addEventListener("click", () => loadSource(btn.dataset.src));
-    });
+    function tryNext() {
+      clearTimeout(fallbackTimer);
+
+      if (srcIdx >= sourcesPool.length) {
+        overlay.classList.remove("hidden");
+        overlay.innerHTML = `
+          <div class="yt-error-box">
+            <strong style="font-size:15px;color:#f87171;">Video unavailable</strong>
+            <span style="font-size:13px;color:#aaa;">No available mirror sources worked for this video.</span>
+          </div>
+        `;
+        return;
+      }
+
+      showSpinner();
+      iframe.src = sourcesPool[srcIdx](videoId);
+      srcIdx++;
+
+      fallbackTimer = setTimeout(showFallbackMessage, 4500);
+    }
+
+    iframe.onload = () => {
+      clearTimeout(fallbackTimer);
+      overlay.classList.add("hidden");
+    };
+
+    tryNext();
+
+    bar.querySelector('[data-action="next-mirror"]').addEventListener("click", tryNext);
 
     function toggleCloak() {
       win.document.title = "Google";
@@ -423,7 +485,7 @@ export function buildYouTube(root, vw, vh, onRemove) {
         </div>
       `;
       card.addEventListener("click", () => {
-        playInNewWindow(item.id, item.title, result.source, result.instance);
+        playInNewWindow(item.id, item.title);
       });
       list.appendChild(card);
     });
