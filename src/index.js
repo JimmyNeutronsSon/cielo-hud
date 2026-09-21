@@ -13,6 +13,7 @@ import { buildSettings, applySavedTheme, applySavedPanelZoom } from './component
 import { buildBrowser } from './components/browser.js';
 import { buildGames } from './components/games.js';
 import { buildMusic } from './components/music.js';
+import { buildYouTube } from './components/youtube.js';
 import { buildUpdateNotice } from './components/updateNotice.js';
 
 export function liquidGlassHUD() {
@@ -82,7 +83,8 @@ export function liquidGlassHUD() {
     settings: (r, w, h) => buildSettings(r, w, h, dock, onRemovePanel),
     browser: (r, w, h) => buildBrowser(r, w, h, onRemovePanel),
     games: (r, w, h) => buildGames(r, w, h, onRemovePanel),
-    music: (r, w, h) => buildMusic(r, w, h, onRemovePanel)
+    music: (r, w, h) => buildMusic(r, w, h, onRemovePanel),
+    youtube: (r, w, h) => buildYouTube(r, w, h, onRemovePanel)
   };
 
   const togglePanel = (key, btn) => {

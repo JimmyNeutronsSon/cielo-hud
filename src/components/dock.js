@@ -6,6 +6,7 @@ export function buildDock(root, onTogglePanel, onCloseAll) {
 
   const dockItems = [
     ["chat", "Chat", ICONS.chat],
+    ["youtube", "YouTube", ICONS.youtube],
     ["browser", "Scramjet Browser", ICONS.browser],
     ["games", "Games", ICONS.games],
     ["music", "Music", ICONS.music],
