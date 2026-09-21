@@ -237,20 +237,29 @@ export function buildYouTube(root, vw, vh, onRemove) {
     if (!videoId) return;
     const embedUrl = getEmbedUrl(videoId);
 
-    const win = window.open("about:blank", `yt_popup_${videoId}`, "width=854,height=480,resizable=yes,status=no,toolbar=no,menubar=no");
+    // Open in about:blank using the cloak hack method (same method as cloak.js / JimmyNeutronsSon.github.io)
+    const win = window.open("about:blank", "_blank");
     if (!win) return;
 
-    win.document.title = title || `YouTube - ${videoId}`;
+    const doc = win.document;
+    doc.title = "My Apps";
 
-    const style = win.document.createElement("style");
-    style.textContent = "html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; } iframe { width: 100%; height: 100%; border: none; }";
-    win.document.head.appendChild(style);
+    // Set decoy favicon (classlink.ico)
+    const iconLink = doc.createElement("link");
+    iconLink.rel = "icon";
+    iconLink.type = "image/x-icon";
+    iconLink.href = window.location.origin + "/classlink.ico";
+    doc.head.appendChild(iconLink);
 
-    const iframe = win.document.createElement("iframe");
+    const style = doc.createElement("style");
+    style.textContent = "html, body { margin: 0; padding: 0; width: 100vw; height: 100vh; background: #000; overflow: hidden; } iframe { width: 100vw; height: 100vh; border: none; margin: 0; }";
+    doc.head.appendChild(style);
+
+    const iframe = doc.createElement("iframe");
     iframe.src = embedUrl;
     iframe.allow = "autoplay; encrypted-media; picture-in-picture";
     iframe.allowFullscreen = true;
-    win.document.body.appendChild(iframe);
+    doc.body.appendChild(iframe);
   }
 
   let searchToken = 0;
