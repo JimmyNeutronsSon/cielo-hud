@@ -1,13 +1,21 @@
 import { createPanel } from "./panel.js";
 import { ICONS } from "./icons.js";
 
-// Extracts YouTube video ID from various standard URL patterns or returns the string if already an ID
+// Same URL-pattern regex as the main site's youtube.js widget (covers
+// watch/embed/v/e/shorts links and youtu.be), plus a fast path for a bare ID.
 function extractVideoId(input) {
   if (!input) return null;
   const str = input.trim();
   if (/^[a-zA-Z0-9_-]{11}$/.test(str)) return str;
-  const match = str.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/);
+  const match = str.match(/(?:youtube\.com\/(?:[^/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/|youtube\.com\/shorts\/)([^"&?/\s]{11})/);
   return match ? match[1] : null;
+}
+
+// Matches the reference widget's "Load Video" fallback: if the input doesn't
+// match a known URL shape, treat it as a raw ID anyway rather than rejecting it.
+function extractVideoIdLoose(input) {
+  const str = (input || "").trim();
+  return extractVideoId(str) || (str.length >= 11 ? str : null);
 }
 
 // Public Invidious/Piped mirrors rotate and die within weeks, so a hardcoded
@@ -240,7 +248,7 @@ export function buildYouTube(root, vw, vh, onRemove) {
 
     const iframe = win.document.createElement("iframe");
     iframe.src = embedUrl;
-    iframe.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture";
+    iframe.allow = "autoplay; encrypted-media; picture-in-picture";
     iframe.allowFullscreen = true;
     win.document.body.appendChild(iframe);
   }
@@ -288,7 +296,7 @@ export function buildYouTube(root, vw, vh, onRemove) {
         </div>
       `;
       resultsContainer.querySelector("[data-retry]")?.addEventListener("click", handleSearch);
-      resultsContainer.querySelector("[data-direct-play]")?.addEventListener("click", () => playInNewWindow(q, q));
+      resultsContainer.querySelector("[data-direct-play]")?.addEventListener("click", () => playInNewWindow(extractVideoIdLoose(q), q));
       return;
     }
 
@@ -302,7 +310,7 @@ export function buildYouTube(root, vw, vh, onRemove) {
           </div>
         </div>
       `;
-      resultsContainer.querySelector("[data-direct-play]")?.addEventListener("click", () => playInNewWindow(q, q));
+      resultsContainer.querySelector("[data-direct-play]")?.addEventListener("click", () => playInNewWindow(extractVideoIdLoose(q), q));
       return;
     }
 
