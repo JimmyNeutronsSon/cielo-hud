@@ -213,45 +213,36 @@ export function buildYouTube(root, vw, vh, onRemove) {
   const searchInput = panel.querySelector(".lg-yt-search");
   const resultsContainer = panel.querySelector("[data-results]");
 
-  // Embedding through the same Invidious/Piped instance that served the
-  // search results actually plays videos YouTube's own embed player refuses
-  // (age-gated, region-locked, "embedding disabled") since it's not going
-  // through YouTube's iframe API at all -- that's the whole point of using
-  // these proxies. Plain youtube-nocookie is kept only as a last-resort
-  // fallback for pasted URLs/IDs when no proxy instance is known yet.
-  function getEmbedUrl(videoId, source, instance) {
-    if (source === "invidious" && instance) {
-      return `${instance.replace(/\/$/, "")}/embed/${videoId}?autoplay=1`;
-    }
-    if (source === "piped") {
-      return `https://piped.video/embed/${videoId}?autoplay=1`;
-    }
-    return `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1`;
+  // Same embed technique as the sidebar's YouTube widget on the main site
+  // (window.toggleYouTube in youtube.js there): a plain youtube-nocookie
+  // iframe with `origin` set to this page's own origin, unencoded. That
+  // widget embeds it inline in the same document; we open it in its own
+  // window instead, but build the popup's DOM directly (no document.write,
+  // which some browsers/extensions handle inconsistently for popups) so the
+  // iframe ends up in an ordinary same-origin document just like the inline
+  // version.
+  function getEmbedUrl(videoId) {
+    return `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&origin=${window.location.origin}`;
   }
 
-  function playInNewWindow(videoId, title = "", source, instance) {
+  function playInNewWindow(videoId, title = "") {
     if (!videoId) return;
-    const embedUrl = getEmbedUrl(videoId, source, instance);
+    const embedUrl = getEmbedUrl(videoId);
 
     const win = window.open("about:blank", `yt_popup_${videoId}`, "width=854,height=480,resizable=yes,status=no,toolbar=no,menubar=no");
     if (!win) return;
 
-    win.document.write(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>${escapeHtml(title || `YouTube - ${videoId}`)}</title>
-        <style>
-          html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; }
-          iframe { width: 100%; height: 100%; border: none; }
-        </style>
-      </head>
-      <body>
-        <iframe src="${embedUrl}" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen referrerPolicy="no-referrer"></iframe>
-      </body>
-      </html>
-    `);
-    win.document.close();
+    win.document.title = title || `YouTube - ${videoId}`;
+
+    const style = win.document.createElement("style");
+    style.textContent = "html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; } iframe { width: 100%; height: 100%; border: none; }";
+    win.document.head.appendChild(style);
+
+    const iframe = win.document.createElement("iframe");
+    iframe.src = embedUrl;
+    iframe.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture";
+    iframe.allowFullscreen = true;
+    win.document.body.appendChild(iframe);
   }
 
   let searchToken = 0;
@@ -319,8 +310,6 @@ export function buildYouTube(root, vw, vh, onRemove) {
     const list = document.createElement("div");
     list.className = "lg-yt-grid";
 
-    const { source, instance } = result;
-
     items.forEach(item => {
       const sub = [item.uploader, item.views, item.uploaded].filter(Boolean).join(" • ");
       const card = document.createElement("div");
@@ -336,7 +325,7 @@ export function buildYouTube(root, vw, vh, onRemove) {
         </div>
       `;
       card.addEventListener("click", () => {
-        playInNewWindow(item.id, item.title, source, instance);
+        playInNewWindow(item.id, item.title);
       });
       list.appendChild(card);
     });
