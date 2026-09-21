@@ -3,7 +3,7 @@ import { lgStore } from './storage.js';
 
 // Bump this whenever a new one-time notice needs to show even to people who
 // dismissed a previous one -- each version gets its own dismissed flag.
-const NOTICE_ID = "songs-games-2026-09";
+const NOTICE_ID = "youtube-2026-09";
 const DISMISS_KEY = "_lg_hud_notice_" + NOTICE_ID;
 
 /**
@@ -20,8 +20,8 @@ export function buildUpdateNotice(root) {
   card.innerHTML = `
     <div class="lg-notice-icon">${ICONS.alert}</div>
     <div class="lg-notice-body">
-      <div class="lg-notice-title">v0.0.7 (Beta)</div>
-      <div class="lg-notice-text">Some songs and games aren't working right now.</div>
+      <div class="lg-notice-title">v0.0.8 (Beta)</div>
+      <div class="lg-notice-text">New: YouTube search &amp; playback. Some songs and games still aren't working right now.</div>
     </div>
     <button class="lg-notice-close" data-notice-close title="Dismiss">${ICONS.close}</button>
   `;

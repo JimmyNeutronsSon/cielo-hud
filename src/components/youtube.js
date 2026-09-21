@@ -67,23 +67,36 @@ function formatViews(views) {
 // Races a fetch across every mirror in the list and returns whichever
 // responds first with usable data -- far faster than trying them one at a
 // time, since a dead mirror otherwise costs the full timeout before moving on.
-async function raceMirrors(urls, timeoutMs) {
-  const attempts = urls.map(url =>
-    fetch(url, { signal: AbortSignal.timeout(timeoutMs) }).then(res => {
+// Returns { data, base } so callers know which instance actually answered
+// (needed to resolve relative thumbnail URLs and to embed via that same
+// instance later).
+async function raceMirrors(bases, pathFor, timeoutMs) {
+  const attempts = bases.map(base =>
+    fetch(pathFor(base), { signal: AbortSignal.timeout(timeoutMs) }).then(res => {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return res.json();
+      return res.json().then(data => ({ data, base }));
     })
   );
   return Promise.any(attempts);
 }
 
+// Invidious sometimes returns thumbnail URLs as host-relative paths (e.g.
+// "/vi/ID/mqdefault.jpg"), which 404 as-is since the browser resolves them
+// against the HUD's own page origin instead of the instance that served them.
+function resolveThumbnail(url, base, fallback) {
+  if (!url) return fallback;
+  if (/^https?:\/\//i.test(url)) return url;
+  return base.replace(/\/$/, "") + (url.startsWith("/") ? url : `/${url}`);
+}
+
 async function searchPiped(query) {
-  const data = await raceMirrors(
-    PIPED_INSTANCES.map(base => `${base}/search?q=${encodeURIComponent(query)}&filter=videos`),
+  const { data, base } = await raceMirrors(
+    PIPED_INSTANCES,
+    b => `${b}/search?q=${encodeURIComponent(query)}&filter=videos`,
     4500
   );
   const items = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
-  return items
+  const mapped = items
     .map(item => {
       const id = extractVideoId(item.url) || item.url?.split("v=")[1];
       if (!id) return null;
@@ -94,21 +107,23 @@ async function searchPiped(query) {
         duration: formatDuration(item.duration),
         views: formatViews(item.views),
         uploaded: item.uploadedDate || "",
-        thumbnail: item.thumbnail || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`
+        thumbnail: resolveThumbnail(item.thumbnail, base, `https://i.ytimg.com/vi/${id}/hqdefault.jpg`)
       };
     })
     .filter(Boolean)
     .slice(0, 24);
+  return { items: mapped, source: "piped", instance: base };
 }
 
 async function searchInvidious(query) {
   const instances = await getInvidiousInstances();
-  const data = await raceMirrors(
-    instances.map(base => `${base}/api/v1/search?q=${encodeURIComponent(query)}&type=video`),
+  const { data, base } = await raceMirrors(
+    instances,
+    b => `${b}/api/v1/search?q=${encodeURIComponent(query)}&type=video`,
     4500
   );
   const items = Array.isArray(data) ? data : [];
-  return items
+  const mapped = items
     .map(item => ({
       id: item.videoId,
       title: item.title || "Untitled Video",
@@ -116,14 +131,21 @@ async function searchInvidious(query) {
       duration: formatDuration(item.lengthSeconds),
       views: formatViews(item.viewCount),
       uploaded: item.publishedText || "",
-      thumbnail: item.videoThumbnails?.find(t => t.quality === "medium")?.url || `https://i.ytimg.com/vi/${item.videoId}/hqdefault.jpg`
+      thumbnail: resolveThumbnail(
+        item.videoThumbnails?.find(t => t.quality === "medium")?.url,
+        base,
+        `https://i.ytimg.com/vi/${item.videoId}/hqdefault.jpg`
+      )
     }))
     .filter(item => item.id)
     .slice(0, 24);
+  return { items: mapped, source: "invidious", instance: base };
 }
 
-// Returns { items } on success or { error: true } if every mirror failed,
-// so the caller can tell "no results" apart from "couldn't reach a proxy".
+// Returns { items, source, instance } on success or { error: true } if every
+// mirror failed, so the caller can tell "no results" apart from "couldn't
+// reach a proxy" -- and can embed playback through the same instance that
+// served the search results.
 async function searchYouTube(query) {
   const videoId = extractVideoId(query);
   if (videoId) {
@@ -141,13 +163,13 @@ async function searchYouTube(query) {
   }
 
   try {
-    return { items: await searchInvidious(query) };
+    return await searchInvidious(query);
   } catch {
     // fall through to piped
   }
 
   try {
-    return { items: await searchPiped(query) };
+    return await searchPiped(query);
   } catch {
     return { error: true };
   }
@@ -191,17 +213,25 @@ export function buildYouTube(root, vw, vh, onRemove) {
   const searchInput = panel.querySelector(".lg-yt-search");
   const resultsContainer = panel.querySelector("[data-results]");
 
-  // Same lightweight, unrestricted embed technique used by the Welkin
-  // YouTube widget: a plain nocookie iframe with `origin` set, opened in its
-  // own about:blank window rather than inline, so playback survives the HUD
-  // panel closing and doesn't get torn down when panels are swapped.
-  function getEmbedUrl(videoId) {
-    return `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&origin=${encodeURIComponent(window.location.origin)}`;
+  // Embedding through the same Invidious/Piped instance that served the
+  // search results actually plays videos YouTube's own embed player refuses
+  // (age-gated, region-locked, "embedding disabled") since it's not going
+  // through YouTube's iframe API at all -- that's the whole point of using
+  // these proxies. Plain youtube-nocookie is kept only as a last-resort
+  // fallback for pasted URLs/IDs when no proxy instance is known yet.
+  function getEmbedUrl(videoId, source, instance) {
+    if (source === "invidious" && instance) {
+      return `${instance.replace(/\/$/, "")}/embed/${videoId}?autoplay=1`;
+    }
+    if (source === "piped") {
+      return `https://piped.video/embed/${videoId}?autoplay=1`;
+    }
+    return `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1`;
   }
 
-  function playInNewWindow(videoId, title = "") {
+  function playInNewWindow(videoId, title = "", source, instance) {
     if (!videoId) return;
-    const embedUrl = getEmbedUrl(videoId);
+    const embedUrl = getEmbedUrl(videoId, source, instance);
 
     const win = window.open("about:blank", `yt_popup_${videoId}`, "width=854,height=480,resizable=yes,status=no,toolbar=no,menubar=no");
     if (!win) return;
@@ -289,6 +319,8 @@ export function buildYouTube(root, vw, vh, onRemove) {
     const list = document.createElement("div");
     list.className = "lg-yt-grid";
 
+    const { source, instance } = result;
+
     items.forEach(item => {
       const sub = [item.uploader, item.views, item.uploaded].filter(Boolean).join(" • ");
       const card = document.createElement("div");
@@ -304,7 +336,7 @@ export function buildYouTube(root, vw, vh, onRemove) {
         </div>
       `;
       card.addEventListener("click", () => {
-        playInNewWindow(item.id, item.title);
+        playInNewWindow(item.id, item.title, source, instance);
       });
       list.appendChild(card);
     });
