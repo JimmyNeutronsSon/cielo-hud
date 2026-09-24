@@ -712,6 +712,171 @@
     .sidebar-trigger {
       display: none !important;
     }
+
+    /* TUTORIAL OVERLAY */
+    #tut-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 500;
+      background: rgba(0, 0, 0, .55);
+      backdrop-filter: blur(3px);
+    }
+
+    #tut-overlay.open {
+      display: block;
+    }
+
+    #tut-highlight-ring {
+      position: absolute;
+      border: 3px solid var(--blue);
+      border-radius: 10px;
+      box-shadow: 0 0 0 4000px rgba(0, 0, 0, .55);
+      pointer-events: none;
+      transition: top .25s, left .25s, width .25s, height .25s;
+      animation: tutPulse 1.4s ease-in-out infinite;
+    }
+
+    @keyframes tutPulse {
+
+      0%,
+      100% {
+        box-shadow: 0 0 0 4000px rgba(0, 0, 0, .55), 0 0 0 0 rgba(21, 55, 244, .5);
+      }
+
+      50% {
+        box-shadow: 0 0 0 4000px rgba(0, 0, 0, .55), 0 0 0 8px rgba(21, 55, 244, 0);
+      }
+    }
+
+    #tut-arrow {
+      position: absolute;
+      font-size: 34px;
+      line-height: 1;
+      color: var(--white);
+      animation: tutBounce 1.2s ease-in-out infinite;
+      pointer-events: none;
+      filter: drop-shadow(0 2px 6px rgba(0, 0, 0, .4));
+    }
+
+    @keyframes tutBounce {
+
+      0%,
+      100% {
+        transform: translateY(0);
+      }
+
+      50% {
+        transform: translateY(-8px);
+      }
+    }
+
+    #tut-card {
+      position: fixed;
+      background: var(--white);
+      border-radius: 16px;
+      padding: 20px 24px;
+      width: 90%;
+      max-width: 320px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, .35);
+      text-align: center;
+      transition: top .25s, left .25s;
+    }
+
+    #tut-card::before {
+      content: '';
+      position: absolute;
+      width: 16px;
+      height: 16px;
+      background: var(--white);
+      transform: rotate(45deg);
+    }
+
+    #tut-card.arrow-top::before {
+      top: -8px;
+      left: 50%;
+      margin-left: -8px;
+    }
+
+    #tut-card.arrow-bottom::before {
+      bottom: -8px;
+      left: 50%;
+      margin-left: -8px;
+    }
+
+    #tut-card h3 {
+      font-family: 'Nunito', sans-serif;
+      font-size: 17px;
+      font-weight: 900;
+      margin-bottom: 8px;
+    }
+
+    #tut-card p {
+      font-size: 13.5px;
+      color: var(--muted);
+      line-height: 1.5;
+      margin-bottom: 14px;
+    }
+
+    #tut-card .tut-step {
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      color: var(--blue);
+      margin-bottom: 6px;
+    }
+
+    .tut-actions {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+    }
+
+    .tut-btn {
+      font-size: 13px;
+      font-weight: 800;
+      border-radius: 8px;
+      padding: 9px 18px;
+      cursor: pointer;
+      border: none;
+      transition: opacity .15s;
+    }
+
+    .tut-btn:hover {
+      opacity: .85;
+    }
+
+    .tut-btn-primary {
+      background: var(--blue);
+      color: var(--white);
+    }
+
+    .tut-btn-secondary {
+      background: transparent;
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    #tut-help-btn {
+      position: fixed;
+      right: 20px;
+      bottom: calc(var(--bottom) + 16px);
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: var(--blue);
+      color: var(--white);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 15px;
+      cursor: pointer;
+      box-shadow: 0 6px 16px rgba(21, 55, 244, .35);
+      z-index: 90;
+    }
   </style>
 </head>
 
@@ -719,6 +884,9 @@
 
   <!-- TOP NAV -->
   <nav class="topnav">
+    <div class="btn-search" style="color: red;" onclick="liquidGlassHUD()">
+      Test Product (DEV)
+    </div>
     <div class="btn-search" onclick="openSearch()">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
         stroke-linecap="round" stroke-linejoin="round">
@@ -887,6 +1055,24 @@
     </div>
   </div>
 
+  <!-- Tutorial Overlay -->
+  <div id="tut-overlay">
+    <div id="tut-highlight-ring"></div>
+    <div id="tut-arrow">&#8593;</div>
+    <div id="tut-card">
+      <div class="tut-step" id="tut-step-label">Step 1 of 3</div>
+      <h3 id="tut-title">Drag a book cover to your bookmarks bar</h3>
+      <p id="tut-desc">Click and hold any book cover above, then drag it up into your browser's bookmarks bar to
+        install it. Don't have a bookmarks bar showing? Press <strong>Ctrl+Shift+B</strong> (<strong>Cmd+Shift+B</strong>
+        on Mac) to turn it on.</p>
+      <div class="tut-actions">
+        <button class="tut-btn tut-btn-secondary" onclick="skipTutorial()">Skip</button>
+        <button class="tut-btn tut-btn-primary" id="tut-next-btn" onclick="nextTutorialStep()">Got it</button>
+      </div>
+    </div>
+  </div>
+  <div id="tut-help-btn" onclick="startTutorial()" title="Show tutorial">?</div>
+
   <!-- Viewer Overlay -->
   <div id="viewer">
     <div class="viewer-top">
@@ -1050,11 +1236,127 @@
       if (e.key === 'Escape') {
         if (document.getElementById('viewer').classList.contains('open')) {
           closeViewer();
+        } else if (document.getElementById('tut-overlay').classList.contains('open')) {
+          skipTutorial();
         } else {
           closeSearch();
         }
       }
     });
+
+    // ---- Tutorial ----
+    const TUT_STEPS = [
+      {
+        target: () => document.querySelector('#featGrid .feat-cover'),
+        step: 'Step 1 of 3',
+        title: 'Drag this cover to your bookmarks bar',
+        desc: "Click and hold a book cover, then drag it up into your browser's bookmarks bar to install it. Don't see a bookmarks bar? Press <strong>Ctrl+Shift+B</strong> (<strong>Cmd+Shift+B</strong> on Mac) to show it."
+      },
+      {
+        target: () => document.querySelector('#newRow .book .cover'),
+        step: 'Step 2 of 3',
+        title: 'Drop it anywhere on the bar',
+        desc: "Once dropped, a new bookmark appears there — that's your tool, ready whenever you need it."
+      },
+      {
+        target: () => document.querySelector('.nav-item.on'),
+        step: 'Step 3 of 3',
+        title: 'Now go use it on Canvas',
+        desc: "Head to <strong>Canvas</strong>, open any page, then click the bookmark you just saved to launch it right there."
+      }
+    ];
+    let tutIndex = 0;
+
+    function positionTutorial() {
+      const cfg = TUT_STEPS[tutIndex];
+      const el = cfg.target();
+      const ring = document.getElementById('tut-highlight-ring');
+      const arrow = document.getElementById('tut-arrow');
+      const card = document.getElementById('tut-card');
+      document.getElementById('tut-step-label').textContent = cfg.step;
+      document.getElementById('tut-title').textContent = cfg.title;
+      document.getElementById('tut-desc').innerHTML = cfg.desc;
+      document.getElementById('tut-next-btn').textContent = tutIndex === TUT_STEPS.length - 1 ? 'Finish' : 'Got it';
+
+      if (el) {
+        el.scrollIntoView({ block: 'center', behavior: 'instant' in window ? 'instant' : 'auto' });
+        const r = el.getBoundingClientRect();
+        ring.style.display = 'block';
+        ring.style.top = (r.top - 6) + 'px';
+        ring.style.left = (r.left - 6) + 'px';
+        ring.style.width = (r.width + 12) + 'px';
+        ring.style.height = (r.height + 12) + 'px';
+
+        const vh = window.innerHeight, vw = window.innerWidth;
+        const spaceAbove = r.top;
+        const spaceBelow = vh - r.bottom;
+        const cardW = Math.min(320, vw * 0.9);
+        let cardLeft = Math.min(Math.max(r.left + r.width / 2 - cardW / 2, 16), vw - cardW - 16);
+
+        if (spaceAbove > spaceBelow && spaceAbove > 160) {
+          // card above the target, arrow points down toward it
+          arrow.style.display = 'block';
+          arrow.style.transform = 'rotate(180deg)';
+          arrow.style.top = (r.top - 46) + 'px';
+          arrow.style.left = (r.left + r.width / 2 - 17) + 'px';
+          card.classList.remove('arrow-top');
+          card.classList.add('arrow-bottom');
+          card.style.transform = 'none';
+          card.style.left = cardLeft + 'px';
+          card.style.top = Math.max(16, r.top - 190) + 'px';
+        } else {
+          // card below the target, arrow points up toward it
+          arrow.style.display = 'block';
+          arrow.style.transform = 'none';
+          arrow.style.top = (r.top - 46) + 'px';
+          arrow.style.left = (r.left + r.width / 2 - 17) + 'px';
+          card.classList.remove('arrow-bottom');
+          card.classList.add('arrow-top');
+          card.style.transform = 'none';
+          card.style.left = cardLeft + 'px';
+          card.style.top = Math.min(vh - 190, r.bottom + 30) + 'px';
+        }
+      } else {
+        ring.style.display = 'none';
+        arrow.style.display = 'none';
+        card.classList.remove('arrow-top', 'arrow-bottom');
+        card.style.left = '50%';
+        card.style.top = '50%';
+        card.style.transform = 'translate(-50%,-50%)';
+      }
+    }
+
+    function startTutorial() {
+      tutIndex = 0;
+      document.getElementById('tut-overlay').classList.add('open');
+      requestAnimationFrame(positionTutorial);
+    }
+
+    function nextTutorialStep() {
+      tutIndex++;
+      if (tutIndex >= TUT_STEPS.length) {
+        finishTutorial();
+      } else {
+        positionTutorial();
+      }
+    }
+
+    function skipTutorial() { finishTutorial(); }
+
+    function finishTutorial() {
+      document.getElementById('tut-overlay').classList.remove('open');
+      try { localStorage.setItem('tutorialSeen', '1'); } catch (e) { }
+    }
+
+    window.addEventListener('resize', () => {
+      if (document.getElementById('tut-overlay').classList.contains('open')) positionTutorial();
+    });
+
+    (function maybeAutoStartTutorial() {
+      let seen = false;
+      try { seen = localStorage.getItem('tutorialSeen') === '1'; } catch (e) { }
+      if (!seen) setTimeout(startTutorial, 600);
+    })();
   </script>
 </body>
 
